@@ -37,3 +37,4 @@ Just run the command `python3 cloudsignaturebot.py time4mind.yml`
 
 ## Known Issues
 
+None yet.
