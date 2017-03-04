@@ -14,8 +14,8 @@ def test_credenziali(l):
 
 def authorize(user):
     title = 'Welcome to Cloud Signature!'
-    sender = '@CloudSignature_Bot (Telegram Bot)'
-    message = 'Telegram user with nick name <b>'+user['nick']+'</b> and phone number <b>'+user['mobile']+'</b> request to use @CloudSignature_Bot with your Valid account <b>'+user['account']+'</b>.'
+    sender = cfg['bot']['username'] + ' (Telegram Bot)'
+    message = 'Telegram user with username <b>' + user['username'] + '</b> and phone number <b>' + user['mobile'] + '</b> request to use ' + cfg['bot']['username'] + ' with your Valid account <b>' + user['time4mind_account'] + '</b>.'
     r = time4id.authorizeMobile(user['cred']['otpId'],user['cred']['otpProvider'],
         title,sender,message)
     return r
@@ -38,8 +38,8 @@ time4user = time4mind.Time4UserRPC(cfg['time4user'])
 time4id = time4mind.Time4IdRPC(cfg['time4id'])
 
 # retrive user credential
-user = { 'account': 'ecisbani@intesigroup.com', 'nick': '@cisba', 'mobile': '3485115925', 'cred': None }
-c = time4user.getMobileActiveCredentials(user['account'])
+user = { 'time4mind_account': 'ecisbani@intesigroup.com', 'username': '@cisba', 'mobile': '3485115925', 'cred': None }
+c = time4user.getMobileActiveCredentials(user['time4mind_account'])
 pprint(c)
 if not c or not c[0]:
     pprint('no credential suitable found')
@@ -52,4 +52,6 @@ pprint(user)
 docs={'documento_1.pdf': 'http://tttt.it/documento_1.pdf'}
 handler = sign(user,docs)
 pprint(handler)
+
+
 

@@ -1,3 +1,5 @@
+# TODO
+# * use logger instead of  print 
 
 import requests,json
 from pprint import pprint 
@@ -28,9 +30,9 @@ class Time4MindRPC:
         if params: self.payload['params'] = params
         j_payload = self.payload
         #j_payload = json.dumps(self.payload)
-        print(j_payload)
+        #print(j_payload)
         resp = requests.post(self.endpoint, cert=self.cert, json=j_payload, headers=self.headers)
-        pprint(resp.content)
+        #pprint(resp.content)
         if resp.status_code != 200: resp.raise_for_status()
         try:    
             return resp.json()['result']
@@ -74,7 +76,7 @@ class Time4IdRPC(Time4MindRPC):
         params = {'otpId': otpId, 'otpProvider': otpProvider }
         return self.call('getTokenInfo', params)
 
-    def authorizeMobile(self,otpId,otpProvider,title,sender, message,
+    def authorizeMobile(self,otpId,otpProvider,title,sender,message,restHook,
         opType=0,authType=0,wizard=None):
         # opType: 0=internal, 1=external, 2=signature 
         # authType: 0=none, 1=content, 2=result, 3=content+result
@@ -83,18 +85,18 @@ class Time4IdRPC(Time4MindRPC):
             'header': { 'title': title, 'sender': sender }, 
             'data': { 'contentType': 'application/xml', 'content': content }, 
             'opType': opType, 'authType': authType }
-        if self.restHook: params['restHook'] = self.restHook
+        params['restHook'] = self.restHook
         if wizard: params['param'] = wizard
         return self.call('submitOOB', params)
 
-    def signMobile(self,otpId,otpProvider,title,sender,message,label,restHook=None):
+    def signMobile(self,otpId,otpProvider,title,sender,message,label,restHook):
         wizard = [ { 
             'tag': 'Sign PIN',
             'name': 'Certificate PIN',
             'description': 'Insert your PIN to sign with ' + label,
             'type': 'PIN'
             } ]
-        return self.authorizeMobile(otpId,otpProvider,title,sender, message,
+        return self.authorizeMobile(otpId,otpProvider,title,sender,message,restHook,
             opType=2,authType=3,wizard=wizard)
 
 
