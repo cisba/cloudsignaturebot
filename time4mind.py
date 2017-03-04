@@ -85,7 +85,7 @@ class Time4IdRPC(Time4MindRPC):
             'header': { 'title': title, 'sender': sender }, 
             'data': { 'contentType': 'application/xml', 'content': content }, 
             'opType': opType, 'authType': authType }
-        params['restHook'] = self.restHook
+        params['restHook'] = restHook
         if wizard: params['param'] = wizard
         return self.call('submitOOB', params)
 

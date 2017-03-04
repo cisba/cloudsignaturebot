@@ -2,7 +2,9 @@
 import sys 
 import yaml
 import logging
+import time
 import time4mind
+from threading import Thread
 from telegram.ext import Updater
 from telegram.ext import CommandHandler
 from flask import Flask, jsonify, abort, make_response, request
@@ -27,7 +29,7 @@ def authorize(user):
     if user['username']:
         message += ' with username <b>' + user['username'] + '</b>'
     message += ' requests to use ' + cfg['bot']['username'] + ' with your Valid account <b>' + user['time4mind_account'] + '</b>.'
-    restHook = cfg['time4id']['restHook'] + '/authorize/' + str(user['id'])
+    restHook = cfg['webserver']['endpoint'] + '/api/v1.0/authorize/' + str(user['id'])
     r = time4id.authorizeMobile(user['cred']['otpId'],user['cred']['otpProvider'],
         title,sender,message,restHook)
     return r
@@ -38,7 +40,7 @@ def start(bot, update):
     text="To use this bot you should have:\n* an e-sign certficate\n* the Valid mobile app installed with the e-sign OTP enabled\n\nLink your Valid account with the command /link followed by the username (usually the email)\n\nAn authorization request will be sent to your Valid mobile app.")
 
 # poor man data persistence on yaml
-def save_acl(user_data):
+def acl_save(user_data):
     try:
         with open(cfg['acl'], 'r') as yml_file: acl = yaml.load(yml_file)
     except:
@@ -49,10 +51,11 @@ def save_acl(user_data):
         acl[user_data['id']][k] = user_data[k]
     try:
         with open(cfg['acl'], 'w+') as yml_file: yml_file.write(yaml.dump(acl))
+        print(yaml.dump(acl))
     except:
         print("error writing acl")
  
- def get_acl_user_id(user_id):
+def acl_get_chat_id(user_id):
     try:
         with open(cfg['acl'], 'r') as yml_file: acl = yaml.load(yml_file)
     except:
@@ -62,16 +65,19 @@ def save_acl(user_data):
     else:
         return acl[user_data[user_id]]['chat_id'] 
  
- def set_acl_status(user_id,status):
+def acl_set_status(user_id,status):
     try:
         with open(cfg['acl'], 'r') as yml_file: acl = yaml.load(yml_file)
     except:
+        print('error opening acl file:' + str(cfg['acl']))
         return None
     if user_id not in acl:
+        print('user_id ' + str(user_id) + 'not found in acl file:' + str(cfg['acl']))
         return None
     acl[user_data[user_id]]['status'] = status 
     try:
         with open(cfg['acl'], 'w+') as yml_file: yml_file.write(yaml.dump(acl))
+        print(yaml.dump(acl))
     except:
         print("error writing acl")
         
@@ -89,6 +95,7 @@ def link(bot, update, args, user_data):
     user_data['last_name'] = update.message.from_user.last_name
     user_data['username'] = update.message.from_user.username
     user_data['chat_id'] = update.message.chat_id
+    user_data['status'] = 'waiting approval'
     if user_data['last_name']:
         user_data['display_name'] = user_data['first_name'] + ' ' + user_data['last_name']
     else:
@@ -97,14 +104,18 @@ def link(bot, update, args, user_data):
     c = time4user.getMobileActiveCredentials(user_data['time4mind_account'])
     if len(c) > 0:
         user_data['cred'] = c[0] 
-    # save user data
-    save_acl(user_data)
     # send request
-    authorize(user_data)
+    transactionId = authorize(user_data)
+    user_data['auth_transactionId'] = transactionId 
+    # save user data
+    acl_save(user_data)
+    # message user
     message = 'I sent an authorization request to your Valid app'
     bot.sendMessage(chat_id=update.message.chat_id, text=message+'\n\n'+str(user_data))
 
 # webserver to handle callback
+
+app = Flask(__name__)
 
 @app.errorhandler(404)
 def not_found(error):
@@ -117,7 +128,26 @@ def get_authorization(user_id):
     if not request.json:
         abort(400)
     # process callback
-    return jsonify({}), 201
+    try:
+        for transaction in request.json:
+            if transaction['approved'] == 1:
+                try:
+                    acl_set_status(user_id,'authorized')
+                    try:
+                        chat_id = acl_get_chat_id(user_id)
+                        message = 'You have been authorized'
+                        bot.sendMessage(chat_id=update.message.chat_id, text=message)
+                    except:
+                        print('chat_id not found')
+                except:
+                    print('failed to save gained authorization to acl')
+    except:
+        print("failed processing transaction callback")
+    return jsonify({'authorization': 'received'}), 200
+
+# [{'approved': 2, 'applicationId': None, 'transactionId': '8f52c58f-9f69-44e9-b716-d7dc1c69a6b4'}]
+
+# [{'pin': '', 'result': [], 'applicationId': None, 'transactionId': '954593fc-3162-4077-9731-af8aab27dda5', 'approved': 1, 'otp': 'E77337B8CC3FD9C5DB805B123259149BC9313A169D9319157187D91205214CFC', 'antiFraud': '[]'}] 
 
 #######################
 # main section
@@ -133,10 +163,13 @@ link_handler = CommandHandler('link', link, pass_args=True,
         pass_user_data=True)
 dispatcher.add_handler(link_handler)
 
+updater_thread = Thread(target=updater.start_polling, name='updater')
+
 if __name__ == '__main__':
-    # start webserver
-    app.run(debug=True)
     # start polling telegram
-    updater.start_polling()
+    #updater.start_polling()
+    updater_thread.start()
+    # start webserver
+    app.run(debug=True, use_reloader=False)
 
 
