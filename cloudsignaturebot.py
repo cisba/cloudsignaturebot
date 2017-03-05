@@ -7,11 +7,12 @@ from threading import Thread
 from queue import Queue
 from time4mind import Time4Mind
 from telegram.ext import Updater, CommandHandler
+from telegram.ext import MessageHandler, Filters
 from telegram import Bot
 from flask import Flask, jsonify, abort, make_response, request
 
 
-# poor man data persistence on yaml
+# methods for a "poor man" data persistence based on a yaml file
 
 def acl_load():
     try:
@@ -45,13 +46,89 @@ def acl_set_status(user_id,status):
     acl[user_id]['status'] = status 
     acl_dump(acl)
   
-def acl_get_status(user_id):
+def acl_get_user_info(user_id):
     acl = acl_load()
     if user_id not in acl:
         return None
     return acl[user_id]
  
+# queue consumer
+def process_queue(args):
+    (queue, bot, acl_set_status) = args
+    while True:
+        q_msg = queue.get()
+        if q_msg['type'] == "approval":
+            transaction = q_msg['content']
+            try:
+                acl_set_status(q_msg['chat_id'],"approved")
+                message = 'You have been authorized'
+                bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
+                logging.info('authorized user: ' + str(q_msg['user_id'])) 
+            except:
+                logging.warning('error sending auth confirmation for transaction ' \
+                                + '\ncontent: ' + str(transaction) \
+                                + '\nbot: ' + str(bot) \
+                                + '\nchat_id: ' + str(q_msg['chat_id']) \
+                                + '\nuser_id: ' + str(q_msg['user_id']) )
+            q.task_done()
+
+# flask webserver to handle callback
+
+app = Flask(__name__)
+# function to start webserver as a thread
+def flask_thread():
+    app.run(debug=True, use_reloader=False)
+
+@app.errorhandler(404)
+def not_found(error):
+    return make_response(jsonify({'error': 'Not found'}), 404)
+
+@app.route('/api/v1.0/authorize/<int:user_id>/<int:chat_id>', methods=['POST'])
+def get_authorization(user_id,chat_id):
+    if not request.json:
+        logging.debug(request)
+        abort(400)
+    if not user_id or not chat_id :
+        loggign.debug(request)
+        abort(400)
+    # process callback
+    try:
+        for transaction in request.json:
+            if transaction['approved'] == 1:
+                q_msg = dict()
+                q_msg['user_id'] = user_id
+                q_msg['chat_id'] = chat_id
+                q_msg['type'] = "approval"
+                q_msg['content'] = transaction
+                q.put(q_msg)
+    except:
+        logging.error("failed processing transaction callback")
+    return jsonify({'authorization': 'received'}), 200
+
+"""
+Example of a transaction APPROVED:
+    {
+    'pin': '', 
+    'result': [], 
+    'applicationId': None, 
+    'transactionId': '954593fc-3162-4077-9731-af8aab27dda5', 
+    'approved': 1, 
+    'otp': 'E77337B8CC3FD9C5DB805B123259149BC9313A169D9319157187D91205214CFC', 
+    'antiFraud': '[]'
+    } 
+
+Example of a transaction REFUSED:
+    {
+    'approved': 2, 
+    'applicationId': None, 
+    'transactionId': '8f52c58f-9f69-44e9-b716-d7dc1c69a6b4'
+    }
+"""
+
+
+############################
 # define telegram functions
+
 def start(bot, update):
     bot.sendMessage(chat_id=update.message.chat_id, 
     text="To use this bot you should have:\n" \
@@ -62,7 +139,7 @@ def start(bot, update):
          + "An authorization request will be sent to your Valid mobile app.")
 
 def status(bot, update):
-    user_info = acl_get_status(update.message.from_user.id)
+    user_info = acl_get_user_info(update.message.from_user.id)
     if not user_info:
         return
     if user_info['status'] == "approved":
@@ -73,7 +150,7 @@ def status(bot, update):
     else:
         text="You are not yet authorized"
     bot.sendMessage(chat_id=update.message.chat_id, text=text, parse_mode="Markdown") 
-      
+
 def link(bot, update, args):
     # check arguments
     if len(args) != 1:
@@ -109,64 +186,30 @@ def link(bot, update, args):
     #message += '\n\n'+str(bot)
     bot.sendMessage(chat_id=update.message.chat_id, text=message)
 
-# queue consumer
-def process_queue(args):
-    (queue, bot, acl_set_status) = args
-    while True:
-        q_msg = queue.get()
-        if q_msg['type'] == "approval":
-            transaction = q_msg['content']
-            try:
-                acl_set_status(q_msg['chat_id'],"approved")
-                message = 'You have been authorized'
-                bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
-                logging.info('authorized user: ' + str(q_msg['user_id'])) 
-            except:
-                logging.warning('error sending auth confirmation for transaction ' \
-                                + '\ncontent: ' + str(transaction) \
-                                + '\nbot: ' + str(bot) \
-                                + '\nchat_id: ' + str(q_msg['chat_id']) \
-                                + '\nuser_id: ' + str(q_msg['user_id']) )
-            q.task_done()
 
-# webserver to handle callback
+def sign(bot, update):
+    user_info = acl_get_user_info(update.message.from_user.id)
+    if not user_info:
+        text="You are not yet authorized"
+    if user_info['status'] == "approved":
+        doc = {'href': "http://www.tttt.it", 'name': "pippo.txt"}
+        sign_single_document(user_info,doc) 
+        text="Request to sign sent to your Valid app"
+    elif user_info['status'] == "waiting approval":
+        text="Sorry but I'm still waiting your authorization from Valid app\n" \
+             + str(user_info) 
+    else:
+        text="You are not yet authorized"
+    bot.sendMessage(chat_id=update.message.chat_id, text=text, parse_mode="Markdown") 
 
-app = Flask(__name__)
+def sign_single_doc(user,doc):
+        title = 'Signature Request'
+        sender = '@CloudSignature_Bot'
+        message = 'Document to sign:' + '<a href=\"' + doc['href'] + '\">' 
+                  + doc['name'] + '</a></li>'
+        return time4id.signMobile(user['cred']['otpId'],user['cred']['otpProvider'],title,sender,message,
+            user['cred']['label'])
 
-@app.errorhandler(404)
-def not_found(error):
-    return make_response(jsonify({'error': 'Not found'}), 404)
-
-@app.route('/api/v1.0/authorize/<int:user_id>/<int:chat_id>', methods=['POST'])
-def get_authorization(user_id,chat_id):
-    #if not request.json or not 'title' in request.json:
-    if not request.json:
-        logging.debug(request)
-        abort(400)
-    if not user_id or not chat_id :
-        loggign.debug(request)
-        abort(400)
-    # process callback
-    try:
-        for transaction in request.json:
-            if transaction['approved'] == 1:
-                q_msg = dict()
-                q_msg['user_id'] = user_id
-                q_msg['chat_id'] = chat_id
-                q_msg['type'] = "approval"
-                q_msg['content'] = transaction
-                q.put(q_msg)
-    except:
-        logging.error("failed processing transaction callback")
-    return jsonify({'authorization': 'received'}), 200
-
-# [{'approved': 2, 'applicationId': None, 'transactionId': '8f52c58f-9f69-44e9-b716-d7dc1c69a6b4'}]
-
-# [{'pin': '', 'result': [], 'applicationId': None, 'transactionId': '954593fc-3162-4077-9731-af8aab27dda5', 'approved': 1, 'otp': 'E77337B8CC3FD9C5DB805B123259149BC9313A169D9319157187D91205214CFC', 'antiFraud': '[]'}] 
-
-# start webserver
-def flask_thread():
-    app.run(debug=True, use_reloader=False)
 
 
 ###############
@@ -206,6 +249,10 @@ dispatcher.add_handler(link_handler)
 # status command
 status_handler = CommandHandler('status', status)
 dispatcher.add_handler(status_handler)
+
+# sign document filter 
+sign_handler = MessageHandler(Filters.document, sign)
+dispatcher.add_handler(sign_handler)
 
 # setup queue
 q = Queue(maxsize=100)
