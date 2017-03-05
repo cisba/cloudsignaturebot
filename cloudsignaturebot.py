@@ -6,70 +6,60 @@ import time
 from threading import Thread
 from queue import Queue
 from time4mind import Time4Mind
-from telegram.ext import Updater
-from telegram.ext import CommandHandler
+from telegram.ext import Updater, CommandHandler
+from telegram import Bot
 from flask import Flask, jsonify, abort, make_response, request
-
-
-# queue consumer
-def process_queue(q):
-    while True:
-        transaction = q.get()
-        try:
-            message = 'You have been authorized'
-            bot.sendMessage(chat_id=transaction['chat_id'], text=message)
-        except:
-            logging.warning('error sending auth confirmation for transaction: ' \
-                  + str(transaction) )
-        q.task_done()
 
 # define telegram functions
 def start(bot, update):
     bot.sendMessage(chat_id=update.message.chat_id, 
-    text="To use this bot you should have:\n* an e-sign certficate\n* the Valid mobile app installed with the e-sign OTP enabled\n\nLink your Valid account with the command /link followed by the username (usually the email)\n\nAn authorization request will be sent to your Valid mobile app.")
+    text="To use this bot you should have:\n" \
+         + "* an e-sign certficate\n" \
+         + "* the Valid mobile app installed with the e-sign OTP enabled\n\n" \
+         + "Link your Valid account with the command /link followed " \
+         + "by the username (usually the email)\n\n" \
+         + "An authorization request will be sent to your Valid mobile app.")
 
 # poor man data persistence on yaml
-def acl_save(user_data):
+
+def acl_load():
     try:
         with open(cfg['acl'], 'r') as yml_file: acl = yaml.load(yml_file)
     except:
+        logging.warning("filed to read acl file: " + str(cfg['acl']))
         acl = dict()
+    return acl
+
+def acl_update(user_data):
+    acl = acl_load()
     if user_data['id'] not in acl:
         acl[user_data['id']] = dict()
     for k in user_data:
         acl[user_data['id']][k] = user_data[k]
+    acl_dump(acl)
+
+def acl_dump(acl):
     try:
         with open(cfg['acl'], 'w+') as yml_file: yml_file.write(yaml.dump(acl))
-        logging.info(yaml.dump(acl))
+        #logging.info(yaml.dump(acl))
     except:
-        logging.error("error writing acl")
- 
-def acl_get_chat_id(user_id):
-    try:
-        with open(cfg['acl'], 'r') as yml_file: acl = yaml.load(yml_file)
-    except:
-        return None
-    if user_id not in acl:
-        return None
-    else:
-        return acl[user_data[user_id]]['chat_id'] 
+        logging.critical("error writing acl file: " + str(cfg['acl']))
  
 def acl_set_status(user_id,status):
-    try:
-        with open(cfg['acl'], 'r') as yml_file: acl = yaml.load(yml_file)
-    except:
-        logging.error('error opening acl file:' + str(cfg['acl']))
-        return None
+    acl = acl_load()
     if user_id not in acl:
-        logging.error('user_id ' + str(user_id) + 'not found in acl file:' + str(cfg['acl']))
+        logging.error('user_id ' + str(user_id) + 'not found in acl file:' \
+                      + str(cfg['acl']))
         return None
-    acl[user_data[user_id]]['status'] = status 
-    try:
-        with open(cfg['acl'], 'w+') as yml_file: yml_file.write(yaml.dump(acl))
-        logging.debug(yaml.dump(acl))
-    except:
-        logging.error("error writing acl")
-        
+    acl[user_id]['status'] = status 
+    acl_dump(acl)
+  
+def acl_get_status(user_id,status):
+    acl = acl_load()
+    if user_id not in acl:
+        return None
+    return = acl[user_id]['status'] 
+       
 # link telegram user to time4mind account
 def link(bot, update, args, user_data):
     # check arguments
@@ -98,11 +88,32 @@ def link(bot, update, args, user_data):
             + '/' + str(user_data['chat_id'])
     user_data['last_transaction'] = time4mind.authorize(user_data,route)
     # save user data
-    acl_save(user_data)
+    acl_update(user_data)
     # message user
     message = 'I sent an authorization request to your Valid app'
     #message += '\n\n'+str(user_data)
+    #message += '\n\n'+str(bot)
     bot.sendMessage(chat_id=update.message.chat_id, text=message)
+
+# queue consumer
+def process_queue(args):
+    (queue, bot, acl_set_status) = args
+    while True:
+        q_msg = queue.get()
+        if q_msg['type'] == "approval":
+            transaction = q_msg['content']
+            try:
+                acl_set_status(q_msg['chat_id'],"approved")
+                message = 'You have been authorized'
+                bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
+                logging.info('authorized user: ' + str(q_msg['user_id'])) 
+            except:
+                logging.warning('error sending auth confirmation for transaction ' \
+                                + '\ncontent: ' + str(transaction) \
+                                + '\nbot: ' + str(bot) \
+                                + '\nchat_id: ' + str(q_msg['chat_id']) \
+                                + '\nuser_id: ' + str(q_msg['user_id']) )
+            q.task_done()
 
 # webserver to handle callback
 
@@ -125,9 +136,12 @@ def get_authorization(user_id,chat_id):
     try:
         for transaction in request.json:
             if transaction['approved'] == 1:
-                transaction['user_id'] = user_id
-                transaction['chat_id'] = chat_id
-                q.put(transaction)
+                q_msg = dict()
+                q_msg['user_id'] = user_id
+                q_msg['chat_id'] = chat_id
+                q_msg['type'] = "approval"
+                q_msg['content'] = transaction
+                q.put(q_msg)
     except:
         logging.error("failed processing transaction callback")
     return jsonify({'authorization': 'received'}), 200
@@ -136,8 +150,13 @@ def get_authorization(user_id,chat_id):
 
 # [{'pin': '', 'result': [], 'applicationId': None, 'transactionId': '954593fc-3162-4077-9731-af8aab27dda5', 'approved': 1, 'otp': 'E77337B8CC3FD9C5DB805B123259149BC9313A169D9319157187D91205214CFC', 'antiFraud': '[]'}] 
 
-#######################
-# main section
+# start webserver
+def flask_thread():
+    app.run(debug=True, use_reloader=False)
+
+
+###############
+# Main section
 
 # read configuration and setup time4mind class
 with open(sys.argv[1], 'r') as yml_file: cfg = yaml.load(yml_file)
@@ -158,42 +177,28 @@ console.setFormatter(formatter)
 # add the handler to the root logger
 logging.getLogger('').addHandler(console)
 
-# Now, define a couple of other loggers which might represent areas in your
-# application:
-
-logger_time4mind = logging.getLogger('cloudsignaturebot.time4mind')
-logger_time4mind.setLevel(logging.DEBUG)
-#logger2 = logging.getLogger('myapp.area2')
-
-
-
-
 # setup telegram updater and  dispatchers
 updater = Updater(token=cfg['bot']['token'])
 dispatcher = updater.dispatcher
 
+# start command
 start_handler = CommandHandler('start', start)
 dispatcher.add_handler(start_handler)
 
+# link command
 link_handler = CommandHandler('link', link, pass_args=True, 
         pass_user_data=True)
 dispatcher.add_handler(link_handler)
 
-updater_thread = Thread(target=updater.start_polling, name='updater')
-
-# dummy queue
+# setup queue
 q = Queue(maxsize=100)
-num_threads = 1
-for i in range(num_threads):
-    worker = Thread(target=process_queue, args=(q,))
-    worker.setDaemon(True)
-    worker.start()
+bot = Bot(cfg['bot']['token'])
+dispatcher.run_async(process_queue,(q,bot,acl_set_status))
 
-if __name__ == '__main__':
-    # start polling telegram
-    #updater.start_polling()
-    updater_thread.start()
-    # start webserver
-    app.run(debug=True, use_reloader=False)
+# run updater and webserver as a threads
+webserver_thread = Thread(target=flask_thread, name='webserver')
+webserver_thread.start()
 
+updater_thread = Thread(target=updater.start_polling, name='updater')
+updater_thread.start()
 
