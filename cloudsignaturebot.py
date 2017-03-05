@@ -10,21 +10,16 @@ from telegram.ext import Updater
 from telegram.ext import CommandHandler
 from flask import Flask, jsonify, abort, make_response, request
 
-# setup logger
-logging.basicConfig(level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-#logger = logging.getLogger()
-#logger.setLevel(logging.INFO)
 
 # queue consumer
-def do_stuff(q):
+def process_queue(q):
     while True:
         transaction = q.get()
         try:
             message = 'You have been authorized'
             bot.sendMessage(chat_id=transaction['chat_id'], text=message)
         except:
-            print('error sending auth confirmation for transaction: ' \
+            logging.warning('error sending auth confirmation for transaction: ' \
                   + str(transaction) )
         q.task_done()
 
@@ -45,9 +40,9 @@ def acl_save(user_data):
         acl[user_data['id']][k] = user_data[k]
     try:
         with open(cfg['acl'], 'w+') as yml_file: yml_file.write(yaml.dump(acl))
-        print(yaml.dump(acl))
+        logging.info(yaml.dump(acl))
     except:
-        print("error writing acl")
+        logging.error("error writing acl")
  
 def acl_get_chat_id(user_id):
     try:
@@ -63,17 +58,17 @@ def acl_set_status(user_id,status):
     try:
         with open(cfg['acl'], 'r') as yml_file: acl = yaml.load(yml_file)
     except:
-        print('error opening acl file:' + str(cfg['acl']))
+        logging.error('error opening acl file:' + str(cfg['acl']))
         return None
     if user_id not in acl:
-        print('user_id ' + str(user_id) + 'not found in acl file:' + str(cfg['acl']))
+        logging.error('user_id ' + str(user_id) + 'not found in acl file:' + str(cfg['acl']))
         return None
     acl[user_data[user_id]]['status'] = status 
     try:
         with open(cfg['acl'], 'w+') as yml_file: yml_file.write(yaml.dump(acl))
-        print(yaml.dump(acl))
+        logging.debug(yaml.dump(acl))
     except:
-        print("error writing acl")
+        logging.error("error writing acl")
         
 # link telegram user to time4mind account
 def link(bot, update, args, user_data):
@@ -119,9 +114,12 @@ def not_found(error):
 
 @app.route('/api/v1.0/authorize/<int:user_id>/<int:chat_id>', methods=['POST'])
 def get_authorization(user_id,chat_id):
-    print(request.json)
     #if not request.json or not 'title' in request.json:
     if not request.json:
+        logging.debug(request)
+        abort(400)
+    if not user_id or not chat_id :
+        loggign.debug(request)
         abort(400)
     # process callback
     try:
@@ -131,7 +129,7 @@ def get_authorization(user_id,chat_id):
                 transaction['chat_id'] = chat_id
                 q.put(transaction)
     except:
-        print("failed processing transaction callback")
+        logging.error("failed processing transaction callback")
     return jsonify({'authorization': 'received'}), 200
 
 # [{'approved': 2, 'applicationId': None, 'transactionId': '8f52c58f-9f69-44e9-b716-d7dc1c69a6b4'}]
@@ -144,6 +142,31 @@ def get_authorization(user_id,chat_id):
 # read configuration and setup time4mind class
 with open(sys.argv[1], 'r') as yml_file: cfg = yaml.load(yml_file)
 time4mind = Time4Mind(cfg)
+
+# setup logger
+logging.basicConfig(level=logging.INFO,
+                    filename=cfg['logfile'], filemode='w',
+                    format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
+                    datefmt='%Y-%m-%d %H:%M')
+# define a Handler which writes INFO messages or higher to the sys.stderr
+console = logging.StreamHandler()
+console.setLevel(logging.DEBUG)
+# set a format which is simpler for console use
+formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+# tell the handler to use this format
+console.setFormatter(formatter)
+# add the handler to the root logger
+logging.getLogger('').addHandler(console)
+
+# Now, define a couple of other loggers which might represent areas in your
+# application:
+
+logger_time4mind = logging.getLogger('cloudsignaturebot.time4mind')
+logger_time4mind.setLevel(logging.DEBUG)
+#logger2 = logging.getLogger('myapp.area2')
+
+
+
 
 # setup telegram updater and  dispatchers
 updater = Updater(token=cfg['bot']['token'])
@@ -162,7 +185,7 @@ updater_thread = Thread(target=updater.start_polling, name='updater')
 q = Queue(maxsize=100)
 num_threads = 1
 for i in range(num_threads):
-    worker = Thread(target=do_stuff, args=(q,))
+    worker = Thread(target=process_queue, args=(q,))
     worker.setDaemon(True)
     worker.start()
 

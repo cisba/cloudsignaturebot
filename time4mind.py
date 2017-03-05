@@ -1,15 +1,9 @@
 """This is the time4mind module 
 
 It allow to manage users' electronic identities on the Time4Mind cloud PaaS
-
-TODO
-* use logger debug instead of trivial print 
 """
 
-
 import requests,json
-from pprint import pprint 
-
 
 class Time4MindRPC:
     """Common base class for all Time4Mind RPC call"""
@@ -47,15 +41,13 @@ class Time4MindRPC:
         self.payload['method'] = method
         if params: self.payload['params'] = params
         j_payload = self.payload
-        #print(json.dumps(self.payload))
-        #print(j_payload)
+        #logging.debug(json.dumps(self.payload))
         resp = requests.post(self.endpoint, cert=self.cert, json=j_payload, headers=self.headers)
         if resp.status_code != 200: resp.raise_for_status()
         try:    
             return resp.json()['result']
         except:
-            print('Got 200.. but not result!')
-            pprint(resp.content)
+            logging.warning('Got 200.. but not result! resp.content is: '+str(resp.content))
             return None
 
 
@@ -75,11 +67,6 @@ class Time4UserRPC(Time4MindRPC):
 
 class Time4IdRPC(Time4MindRPC):
     """class for Time4Id RPC call derived from Time4MindRPC"""
-
-    def getTokenInfo(self,otpId,otpProvider):
-        """map to Time4Id getTokenInfo method"""
-        params = {'otpId': otpId, 'otpProvider': otpProvider }
-        return self.postRPC('getTokenInfo', params)
 
     def authorizeMobile(self,otpId,otpProvider,title,sender,message,restHook,
         opType=0,authType=0,wizard=None):
