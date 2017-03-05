@@ -3,14 +3,12 @@ import sys
 import yaml
 import logging
 import time
-import time4mind
 from threading import Thread
+from queue import Queue
+from time4mind import Time4Mind
 from telegram.ext import Updater
 from telegram.ext import CommandHandler
 from flask import Flask, jsonify, abort, make_response, request
-
-# read configuration
-with open(sys.argv[1], 'r') as yml_file: cfg = yaml.load(yml_file)
 
 # setup logger
 logging.basicConfig(level=logging.INFO,
@@ -18,21 +16,17 @@ logging.basicConfig(level=logging.INFO,
 #logger = logging.getLogger()
 #logger.setLevel(logging.INFO)
 
-# define time4mind functions
-time4user = time4mind.Time4UserRPC(cfg['time4user'])
-time4id = time4mind.Time4IdRPC(cfg['time4id'])
-
-def authorize(user):
-    title = 'Welcome to Cloud Signature!'
-    sender = cfg['bot']['username'] + ' (Telegram Bot)'
-    message = 'Telegram user <b>' + user['display_name'] + '</b>'
-    if user['username']:
-        message += ' with username <b>' + user['username'] + '</b>'
-    message += ' requests to use ' + cfg['bot']['username'] + ' with your Valid account <b>' + user['time4mind_account'] + '</b>.'
-    restHook = cfg['webserver']['endpoint'] + '/api/v1.0/authorize/' + str(user['id'])
-    r = time4id.authorizeMobile(user['cred']['otpId'],user['cred']['otpProvider'],
-        title,sender,message,restHook)
-    return r
+# queue consumer
+def do_stuff(q):
+    while True:
+        transaction = q.get()
+        try:
+            message = 'You have been authorized'
+            bot.sendMessage(chat_id=transaction['chat_id'], text=message)
+        except:
+            print('error sending auth confirmation for transaction: ' \
+                  + str(transaction) )
+        q.task_done()
 
 # define telegram functions
 def start(bot, update):
@@ -101,17 +95,19 @@ def link(bot, update, args, user_data):
     else:
         user_data['display_name'] = user_data['first_name'] 
     # look for credentials
-    c = time4user.getMobileActiveCredentials(user_data['time4mind_account'])
-    if len(c) > 0:
-        user_data['cred'] = c[0] 
+    cred = time4mind.getMobileActiveCredentials(user_data['time4mind_account'])
+    if len(cred) > 0:
+        user_data['cred'] = cred[0] 
     # send request
-    transactionId = authorize(user_data)
-    user_data['auth_transactionId'] = transactionId 
+    route = '/api/v1.0/authorize/' + str(user_data['id']) \
+            + '/' + str(user_data['chat_id'])
+    user_data['last_transaction'] = time4mind.authorize(user_data,route)
     # save user data
     acl_save(user_data)
     # message user
     message = 'I sent an authorization request to your Valid app'
-    bot.sendMessage(chat_id=update.message.chat_id, text=message+'\n\n'+str(user_data))
+    #message += '\n\n'+str(user_data)
+    bot.sendMessage(chat_id=update.message.chat_id, text=message)
 
 # webserver to handle callback
 
@@ -121,8 +117,8 @@ app = Flask(__name__)
 def not_found(error):
     return make_response(jsonify({'error': 'Not found'}), 404)
 
-@app.route('/api/v1.0/authorize/<int:user_id>', methods=['POST'])
-def get_authorization(user_id):
+@app.route('/api/v1.0/authorize/<int:user_id>/<int:chat_id>', methods=['POST'])
+def get_authorization(user_id,chat_id):
     print(request.json)
     #if not request.json or not 'title' in request.json:
     if not request.json:
@@ -131,16 +127,9 @@ def get_authorization(user_id):
     try:
         for transaction in request.json:
             if transaction['approved'] == 1:
-                try:
-                    acl_set_status(user_id,'authorized')
-                    try:
-                        chat_id = acl_get_chat_id(user_id)
-                        message = 'You have been authorized'
-                        bot.sendMessage(chat_id=update.message.chat_id, text=message)
-                    except:
-                        print('chat_id not found')
-                except:
-                    print('failed to save gained authorization to acl')
+                transaction['user_id'] = user_id
+                transaction['chat_id'] = chat_id
+                q.put(transaction)
     except:
         print("failed processing transaction callback")
     return jsonify({'authorization': 'received'}), 200
@@ -151,6 +140,10 @@ def get_authorization(user_id):
 
 #######################
 # main section
+
+# read configuration and setup time4mind class
+with open(sys.argv[1], 'r') as yml_file: cfg = yaml.load(yml_file)
+time4mind = Time4Mind(cfg)
 
 # setup telegram updater and  dispatchers
 updater = Updater(token=cfg['bot']['token'])
@@ -164,6 +157,14 @@ link_handler = CommandHandler('link', link, pass_args=True,
 dispatcher.add_handler(link_handler)
 
 updater_thread = Thread(target=updater.start_polling, name='updater')
+
+# dummy queue
+q = Queue(maxsize=100)
+num_threads = 1
+for i in range(num_threads):
+    worker = Thread(target=do_stuff, args=(q,))
+    worker.setDaemon(True)
+    worker.start()
 
 if __name__ == '__main__':
     # start polling telegram
