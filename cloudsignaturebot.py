@@ -10,15 +10,6 @@ from telegram.ext import Updater, CommandHandler
 from telegram import Bot
 from flask import Flask, jsonify, abort, make_response, request
 
-# define telegram functions
-def start(bot, update):
-    bot.sendMessage(chat_id=update.message.chat_id, 
-    text="To use this bot you should have:\n" \
-         + "* an e-sign certficate\n" \
-         + "* the Valid mobile app installed with the e-sign OTP enabled\n\n" \
-         + "Link your Valid account with the command /link followed " \
-         + "by the username (usually the email)\n\n" \
-         + "An authorization request will be sent to your Valid mobile app.")
 
 # poor man data persistence on yaml
 
@@ -30,12 +21,12 @@ def acl_load():
         acl = dict()
     return acl
 
-def acl_update(user_data):
+def acl_update(user_info):
     acl = acl_load()
-    if user_data['id'] not in acl:
-        acl[user_data['id']] = dict()
-    for k in user_data:
-        acl[user_data['id']][k] = user_data[k]
+    if user_info['id'] not in acl:
+        acl[user_info['id']] = dict()
+    for k in user_info:
+        acl[user_info['id']][k] = user_info[k]
     acl_dump(acl)
 
 def acl_dump(acl):
@@ -54,44 +45,67 @@ def acl_set_status(user_id,status):
     acl[user_id]['status'] = status 
     acl_dump(acl)
   
-def acl_get_status(user_id,status):
+def acl_get_status(user_id):
     acl = acl_load()
     if user_id not in acl:
         return None
-    return = acl[user_id]['status'] 
-       
-# link telegram user to time4mind account
-def link(bot, update, args, user_data):
+    return acl[user_id]
+ 
+# define telegram functions
+def start(bot, update):
+    bot.sendMessage(chat_id=update.message.chat_id, 
+    text="To use this bot you should have:\n" \
+         + "* an e-sign certficate\n" \
+         + "* the Valid mobile app installed with the e-sign OTP enabled\n\n" \
+         + "Link your Valid account with the command /link followed " \
+         + "by the username (usually the email)\n\n" \
+         + "An authorization request will be sent to your Valid mobile app.")
+
+def status(bot, update):
+    user_info = acl_get_status(update.message.from_user.id)
+    if not user_info:
+        return
+    if user_info['status'] == "approved":
+        text="You are already authorized to use Valid account *" \
+             + str(user_info['time4mind_account']) +'*' 
+    elif user_info['status'] == "waiting approval":
+        text="I'm waiting your authorization from Valid app\n" + str(user_info) 
+    else:
+        text="You are not yet authorized"
+    bot.sendMessage(chat_id=update.message.chat_id, text=text, parse_mode="Markdown") 
+      
+def link(bot, update, args):
     # check arguments
     if len(args) != 1:
         text = 'Please, pass me only one string without spaces'
         bot.sendMessage(chat_id=update.message.chat_id, text=text)
         return
     # build telegram user data structure
-    user_data['id'] = update.message.from_user.id
-    user_data['time4mind_account'] = args[0]
-    user_data['first_name'] = update.message.from_user.first_name
-    user_data['last_name'] = update.message.from_user.last_name
-    user_data['username'] = update.message.from_user.username
-    user_data['chat_id'] = update.message.chat_id
-    user_data['status'] = 'waiting approval'
-    if user_data['last_name']:
-        user_data['display_name'] = user_data['first_name'] + ' ' + user_data['last_name']
+    user_info = dict()
+    user_info['id'] = update.message.from_user.id
+    user_info['time4mind_account'] = args[0]
+    user_info['first_name'] = update.message.from_user.first_name
+    user_info['last_name'] = update.message.from_user.last_name
+    user_info['username'] = update.message.from_user.username
+    user_info['chat_id'] = update.message.chat_id
+    user_info['status'] = 'waiting approval'
+    if user_info['last_name']:
+        user_info['display_name'] = user_info['first_name'] + ' ' + user_info['last_name']
     else:
-        user_data['display_name'] = user_data['first_name'] 
+        user_info['display_name'] = user_info['first_name'] 
     # look for credentials
-    cred = time4mind.getMobileActiveCredentials(user_data['time4mind_account'])
+    cred = time4mind.getMobileActiveCredentials(user_info['time4mind_account'])
     if len(cred) > 0:
-        user_data['cred'] = cred[0] 
+        user_info['cred'] = cred[0] 
     # send request
-    route = '/api/v1.0/authorize/' + str(user_data['id']) \
-            + '/' + str(user_data['chat_id'])
-    user_data['last_transaction'] = time4mind.authorize(user_data,route)
+    route = '/api/v1.0/authorize/' + str(user_info['id']) \
+            + '/' + str(user_info['chat_id'])
+    user_info['last_transaction'] = time4mind.authorize(user_info,route)
     # save user data
-    acl_update(user_data)
+    acl_update(user_info)
     # message user
     message = 'I sent an authorization request to your Valid app'
-    #message += '\n\n'+str(user_data)
+    #message += '\n\n'+str(user_info)
     #message += '\n\n'+str(bot)
     bot.sendMessage(chat_id=update.message.chat_id, text=message)
 
@@ -186,9 +200,12 @@ start_handler = CommandHandler('start', start)
 dispatcher.add_handler(start_handler)
 
 # link command
-link_handler = CommandHandler('link', link, pass_args=True, 
-        pass_user_data=True)
+link_handler = CommandHandler('link', link, pass_args=True)
 dispatcher.add_handler(link_handler)
+
+# status command
+status_handler = CommandHandler('status', status)
+dispatcher.add_handler(status_handler)
 
 # setup queue
 q = Queue(maxsize=100)
