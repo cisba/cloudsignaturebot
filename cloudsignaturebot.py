@@ -3,6 +3,9 @@ import sys
 import yaml
 import logging
 import time
+import uuid
+import urllib.request
+import shutil
 from threading import Thread
 from queue import Queue
 from time4mind import Time4Mind
@@ -18,7 +21,7 @@ def acl_load():
     try:
         with open(cfg['acl'], 'r') as yml_file: acl = yaml.load(yml_file)
     except:
-        logging.warning("filed to read acl file: " + str(cfg['acl']))
+        logging.warning("failed to read acl file: " + str(cfg['acl']))
         acl = dict()
     return acl
 
@@ -57,10 +60,11 @@ def process_queue(args):
     (queue, bot, acl_set_status) = args
     while True:
         q_msg = queue.get()
-        if q_msg['type'] == "approval":
+        logging.debug(q_msg)
+        if q_msg['type'] == "authorization":
             transaction = q_msg['content']
             try:
-                acl_set_status(q_msg['chat_id'],"approved")
+                acl_set_status(q_msg['chat_id'],"authorized")
                 message = 'You have been authorized'
                 bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
                 logging.info('authorized user: ' + str(q_msg['user_id'])) 
@@ -70,7 +74,32 @@ def process_queue(args):
                                 + '\nbot: ' + str(bot) \
                                 + '\nchat_id: ' + str(q_msg['chat_id']) \
                                 + '\nuser_id: ' + str(q_msg['user_id']) )
-            q.task_done()
+        elif q_msg['type'] == "signature":
+            transaction = q_msg['content']
+            try:
+                # retrive file info
+                operation_uuid4 = q_msg['operation_uuid4'] 
+                yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
+                with open(yml_pathname, 'r') as yml_file: docs = yaml.load(yml_file)
+                # TODO: pkbox sign
+                logging.info('user ' + q_msg['user_id'] \
+                              + ' signed documents: ' + str(docs)) 
+                # send signed files
+                message = 'You signed the following documents:'
+                bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
+                for file_id in docs['list']:
+                    bot.sendDocument(chat_id=chat_id, 
+                                     document=open(cfg['storage']+'/'+file_id, 'rb'),
+                                     filename=file_id['file_name'])
+            except:
+                logging.warning('error signing document for transaction ' \
+                                + '\ncontent: ' + str(transaction) \
+                                + '\nbot: ' + str(bot) \
+                                + '\ndoc:' + str(docs) \
+                                + '\nchat_id: ' + str(q_msg['chat_id']) \
+                                + '\nuser_id: ' + str(q_msg['user_id']) )
+        q.task_done()
+
 
 # flask webserver to handle callback
 
@@ -83,8 +112,8 @@ def flask_thread():
 def not_found(error):
     return make_response(jsonify({'error': 'Not found'}), 404)
 
-@app.route('/api/v1.0/authorize/<int:user_id>/<int:chat_id>', methods=['POST'])
-def get_authorization(user_id,chat_id):
+@app.route('/api/v1.0/authorize/<int:chat_id>/<int:user_id>', methods=['POST'])
+def get_authorization(chat_id,user_id):
     if not request.json:
         logging.debug(request)
         abort(400)
@@ -98,7 +127,7 @@ def get_authorization(user_id,chat_id):
                 q_msg = dict()
                 q_msg['user_id'] = user_id
                 q_msg['chat_id'] = chat_id
-                q_msg['type'] = "approval"
+                q_msg['type'] = "authorization"
                 q_msg['content'] = transaction
                 q.put(q_msg)
     except:
@@ -125,6 +154,31 @@ Example of a transaction REFUSED:
     }
 """
 
+@app.route('/api/v1.0/sign/<int:chat_id>/<int:user_id>/<string:operation_uuid4>', methods=['POST'])
+def get_signature(chat_id,user_id,operation_uuid4):
+    if not request.json:
+        logging.debug(request)
+        abort(400)
+    if not operation_uuid4 or not chat_id :
+        loggign.debug(request)
+        abort(400)
+    # process callback
+    try:
+        logging.debug(request)
+        for transaction in request.json:
+            if transaction['approved'] == 1:
+                q_msg = dict()
+                q_msg['chat_id'] = chat_id
+                q_msg['user_id'] = user_id
+                q_msg['operation_uuid4'] = operation_uuid4
+                q_msg['type'] = "signature"
+                q_msg['content'] = transaction
+                q.put(q_msg)
+    except:
+        logging.error("failed processing signature transaction callback")
+    return jsonify({'authorization': 'received'}), 200
+
+
 
 ############################
 # define telegram functions
@@ -145,7 +199,7 @@ def status(bot, update):
     if user_info['status'] == "approved":
         text="You are already authorized to use Valid account *" \
              + str(user_info['time4mind_account']) +'*' 
-    elif user_info['status'] == "waiting approval":
+    elif user_info['status'] == "waiting authorization":
         text="I'm waiting your authorization from Valid app\n" + str(user_info) 
     else:
         text="You are not yet authorized"
@@ -165,7 +219,7 @@ def link(bot, update, args):
     user_info['last_name'] = update.message.from_user.last_name
     user_info['username'] = update.message.from_user.username
     user_info['chat_id'] = update.message.chat_id
-    user_info['status'] = 'waiting approval'
+    user_info['status'] = 'waiting authorization'
     if user_info['last_name']:
         user_info['display_name'] = user_info['first_name'] + ' ' + user_info['last_name']
     else:
@@ -175,41 +229,81 @@ def link(bot, update, args):
     if len(cred) > 0:
         user_info['cred'] = cred[0] 
     # send request
-    route = '/api/v1.0/authorize/' + str(user_info['id']) \
-            + '/' + str(user_info['chat_id'])
-    user_info['last_transaction'] = time4mind.authorize(user_info,route)
-    # save user data
-    acl_update(user_info)
-    # message user
-    message = 'I sent an authorization request to your Valid app'
-    #message += '\n\n'+str(user_info)
-    #message += '\n\n'+str(bot)
-    bot.sendMessage(chat_id=update.message.chat_id, text=message)
+    route = '/api/v1.0/authorize/' + str(user_info['chat_id']) \
+            + '/' + str(user_info['id'])
+    try:
+        user_info['last_transaction'] = time4mind.authorize(user_info,route)
+        # save user data
+        acl_update(user_info)
+        # message user
+        message = 'I sent an authorization request to your Valid app'
+        #message += '\n\n'+str(user_info)
+        #message += '\n\n'+str(bot)
+        bot.sendMessage(chat_id=update.message.chat_id, text=message)
+    except:
+         logging.warning("failed to request account usage authorization")
 
 
-def sign(bot, update):
+def sign_single_document(bot, update):
     user_info = acl_get_user_info(update.message.from_user.id)
+    operation_uuid4 = str(uuid.uuid4())
     if not user_info:
         text="You are not yet authorized"
     if user_info['status'] == "approved":
-        doc = {'href': "http://www.tttt.it", 'name': "pippo.txt"}
-        sign_single_document(user_info,doc) 
+        doc_info = update.message.document.__dict__
+        # {'mime_type': 'application/pdf', 'file_id': 'BQADBAADbwADNnbhUZSE6H4S95PIAg', 'file_name': '2017_ci_01_28.pdf', 'file_size': 71689}
+        file_id = doc_info['file_id']
+        file_info = bot.getFile(file_id)
+        # {'file_size': 71689, 'file_path': 'https://api.telegram.org/file/bot333930621:AAGJ4XLJ9UxQvfTEQXeKwOkiAvhTE5rdRJE/documents/file_0.pdf', 'file_id': 'BQADBAADbwADNnbhUZSE6H4S95PIAg'}
+        doc_info['file_path'] = file_info['file_path']
+        doc_info['href'] = cfg['webserver']['endpoint'] + '/api/v1.0/file/' \
+                           + operation_uuid4 + '/' + file_id 
+        docs = { 'operation_uuid4': operation_uuid4,
+                 'list': [ doc_info ] }
+        # save data to yaml
+        yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
+        with open(yml_pathname, 'w+') as yml_file: yml_file.write(yaml.dump(docs))
+        # request to sign
+        signMobileRequest(user_info,docs) 
         text="Request to sign sent to your Valid app"
-    elif user_info['status'] == "waiting approval":
+        # download file 
+        with urllib.request.urlopen(doc_info['file_path']) as response, \
+             open(cfg['storage'] + '/' + doc_info['file_name'], 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+
+    elif user_info['status'] == "waiting authorization":
         text="Sorry but I'm still waiting your authorization from Valid app\n" \
              + str(user_info) 
     else:
         text="You are not yet authorized"
     bot.sendMessage(chat_id=update.message.chat_id, text=text, parse_mode="Markdown") 
 
-def sign_single_doc(user,doc):
+def signMobileRequest(user_info,docs):
         title = 'Signature Request'
         sender = '@CloudSignature_Bot'
-        message = 'Document to sign:' + '<a href=\"' + doc['href'] + '\">' 
-                  + doc['name'] + '</a></li>'
-        return time4id.signMobile(user['cred']['otpId'],user['cred']['otpProvider'],title,sender,message,
-            user['cred']['label'])
-
+        message = 'Documents to sign:'
+        for file_id in docs['list']:
+            message += '<li><a href=\"' + file_id['href'] + '\">' \
+                       + file_id['file_name'] + '</a></li>'
+        route = '/api/v1.0/sign/' \
+                + str(user_info['chat_id']) + '/' \
+                + str(user_info['id']) + '/' \
+                + str(docs['operation_uuid4'])
+        try:
+            user_info['last_transaction'] = time4mind.signMobile(
+                                            user_info['cred']['otpId'],
+                                            user_info['cred']['otpProvider'],
+                                            title,sender,message,
+                                            user_info['cred']['label'],route)
+            logging.info("request signature sent for user: " + str(user_info['id']) \
+                         + "\ntransaction: " + str(user_info['last_transaction']) \
+                         + "\noperation: " + str(docs['operation_uuid4']))
+        except:
+            logging.warning("failed to request signature authorization")
+        try:
+            acl_update(user_info)
+        except:
+            logging.warning("failed to save transaction data")
 
 
 ###############
@@ -251,7 +345,7 @@ status_handler = CommandHandler('status', status)
 dispatcher.add_handler(status_handler)
 
 # sign document filter 
-sign_handler = MessageHandler(Filters.document, sign)
+sign_handler = MessageHandler(Filters.document, sign_single_document)
 dispatcher.add_handler(sign_handler)
 
 # setup queue
@@ -265,4 +359,6 @@ webserver_thread.start()
 
 updater_thread = Thread(target=updater.start_polling, name='updater')
 updater_thread.start()
+
+
 

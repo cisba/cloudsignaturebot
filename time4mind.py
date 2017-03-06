@@ -103,27 +103,6 @@ class Time4IdRPC(Time4MindRPC):
         if wizard: params['param'] = wizard
         return self.postRPC('submitOOB', params)
 
-    def signMobile(self,otpId,otpProvider,title,sender,message,label,restHook):
-        """map to Time4Id submitOOB method, for signature with PIN request
-
-        Keyword arguments:
-        otpId -- a propery of credential object
-        otpProvider -- a propery of credential object
-        title -- the title of the message displayed on the mobile notification view
-        sender -- the sender of the message displayed on the mobile notification view
-        message -- the body of the message displayed on the mobile notification view
-        label -- the string used by the user to identify his credential
-        restHook -- the URL of the listener receiving authorization responses
-        """
-        wizard = [ { 
-            'tag': 'Sign PIN',
-            'name': 'Certificate PIN',
-            'description': 'Insert your PIN to sign with ' + label,
-            'type': 'PIN'
-            } ]
-        return self.authorizeMobile(otpId,otpProvider,title,sender,message,restHook,
-            opType=2,authType=3,wizard=wizard)
-
 
 class Time4Mind():
     """the high level class used from others applications
@@ -186,4 +165,28 @@ class Time4Mind():
                 c['otpMode'] = todo_item['otpDetails']['otpMode'] 
                 result += [c]
         return result
+
+    def signMobile(self,otpId,otpProvider,title,sender,message,label,route):
+        """map to Time4Id submitOOB method, for signature with PIN request
+
+        Keyword arguments:
+        otpId -- a propery of credential object
+        otpProvider -- a propery of credential object
+        title -- the title of the message displayed on the mobile notification view
+        sender -- the sender of the message displayed on the mobile notification view
+        message -- the body of the message displayed on the mobile notification view
+        label -- the string used by the user to identify his credential
+        restHook -- the URL of the listener receiving authorization responses
+        """
+        wizard = [ { 
+            'tag': 'Sign PIN',
+            'name': 'Certificate PIN',
+            'description': 'Insert your PIN to sign with ' + label,
+            'type': 'PIN'
+            } ]
+        restHook = self.cfg['webserver']['endpoint'] + route 
+        return self.time4id.authorizeMobile(otpId,otpProvider,
+                                            title,sender,message,restHook,
+                                            opType=2,authType=3,wizard=wizard)
+
 
