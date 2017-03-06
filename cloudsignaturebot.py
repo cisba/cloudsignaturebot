@@ -104,17 +104,23 @@ def process_queue(args):
                 logging.warning('error retriving saved info for operation: '\
                                 + operation_uuid4)
 
-            # TODO: pkbox sign
+            # sign
             transaction = q_msg['content']
-            directory = iso_week_dir(cfg['storage']) 
-            if not os.path.exists(directory + docs['list'][0]['file_id']):
-                directory = iso_week_dir(cfg['storage'],days=-7)
-            if not os.path.exists(directory + docs['list'][0]['file_id']):
-                logging.critical("not found" + directory \
-                                + docs['list'][0]['file_id'])
+            parent_dir = iso_week_dir(cfg['storage'])
+            directory = parent_dir + '/' + operation_uuid4
+            if not os.path.isdir(directory):
+                parent_dir = iso_week_dir(cfg['storage'],days=-7) 
+                directory = parent_dir + '/' + operation_uuid4
+            if not os.path.isdir(directory):
+                logging.critical("not found" + directory)
             for file_item in docs['list']:
                 pathname = directory + file_item['file_id']
-                logging.info("signing file: " + pathname)
+                if not os.path.exists(pathname):
+                    logging.critical("not found" + pathname)
+                else:
+                    logging.info("signing file: " + pathname)
+                    # here call pkbox for real sign job
+                    # TODO
             logging.info('user ' + str(q_msg['user_id']) \
                               + ' signed documents in operation: ' \
                               + operation_uuid4 ) 
@@ -124,18 +130,23 @@ def process_queue(args):
            #                     + operation_uuid4) 
 
             # send message and signed files
-            if True:
-                message = 'You signed the following:'
-                bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
-                for file_item in docs['list']:
-                    bot.sendDocument( chat_id=q_msg['chat_id'], 
-                        document=open(directory + file_item['file_id'], 'rb'),
-                        filename=file_item['file_name'])
-            else:
-                logging.warning('error sending signed documents for operation: ' 
-                                + operation_uuid4 \
-                                + '\ntransaction: ' + repr(transaction) )
-            # TODO: remove files
+            message = 'You signed the following:'
+            bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
+            for file_item in docs['list']:
+                file_pathname = directory + file_item['file_id']
+                new_name='SIGNED_' + file_item['file_name']
+                bot.sendDocument( chat_id=q_msg['chat_id'], 
+                    document=open(file_pathname, 'rb'),
+                    filename=new_name)
+                os.remove(file_pathname)
+            # remove yaml
+            os.remove(yml_pathname)
+            os.rmdir(directory)
+            try:
+                os.rmdir(parent_dir)
+            except:
+                pass
+
         q.task_done()
 
 
@@ -320,7 +331,7 @@ def sign_single_document(bot, update):
         signMobileRequest(user_info,docs) 
         text="Request to sign sent to your Valid app"
         # download file 
-        directory = iso_week_dir(cfg['storage'])
+        directory = iso_week_dir(cfg['storage']) + '/' + operation_uuid4
         if not os.path.exists(directory):
                 os.makedirs(directory)
         with urllib.request.urlopen(doc_info['file_path']) as response, \
