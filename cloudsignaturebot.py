@@ -57,15 +57,6 @@ def acl_get_user_info(user_id):
         return None
     return acl[user_id]
 
-# directory based on isocalendar
-
-def iso_week_dir(basepath,days=0):
-    return basepath \
-        + '/' \
-        + str(datetime.date.today().isocalendar()[0]) \
-        + str((datetime.date.today()+datetime.timedelta(days)).isocalendar()[1]) \
-        + '/'
-
 # queue consumer
 def process_queue(args):
     (queue, bot, acl_set_status) = args
@@ -106,11 +97,8 @@ def process_queue(args):
 
             # sign
             transaction = q_msg['content']
-            parent_dir = iso_week_dir(cfg['storage'])
+            parent_dir = str(q_msg['chat_id'])
             directory = parent_dir + '/' + operation_uuid4
-            if not os.path.isdir(directory):
-                parent_dir = iso_week_dir(cfg['storage'],days=-7) 
-                directory = parent_dir + '/' + operation_uuid4
             if not os.path.isdir(directory):
                 logging.critical("not found" + directory)
             for file_item in docs['list']:
@@ -308,6 +296,7 @@ def link(bot, update, args):
 
 def sign_single_document(bot, update):
     user_info = acl_get_user_info(update.message.from_user.id)
+    chat_id = update.message.chat_id
     operation_uuid4 = str(uuid.uuid4())
     if not user_info:
         text="You are not yet authorized"
@@ -331,7 +320,7 @@ def sign_single_document(bot, update):
         signMobileRequest(user_info,docs) 
         text="Request to sign sent to your Valid app"
         # download file 
-        directory = iso_week_dir(cfg['storage']) + '/' + operation_uuid4
+        directory = str(chat_id) + '/' + operation_uuid4
         if not os.path.exists(directory):
                 os.makedirs(directory)
         with urllib.request.urlopen(doc_info['file_path']) as response, \
