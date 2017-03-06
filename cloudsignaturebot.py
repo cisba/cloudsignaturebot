@@ -171,6 +171,30 @@ def get_authorization(chat_id,user_id):
         logging.error("failed processing transaction callback")
     return jsonify({'authorization': 'received'}), 200
 
+@app.route('/api/v1.0/sign/<int:chat_id>/<int:user_id>/<string:operation_uuid4>', methods=['POST'])
+def get_signature(chat_id,user_id,operation_uuid4):
+    if any([ not request.json,
+             not operation_uuid4,
+             not chat_id,
+             not user_id ]):
+        logging.debug(request)
+        abort(400)
+    # process callback
+    try:
+        logging.debug(request)
+        for transaction in request.json:
+            if transaction['approved'] == 1:
+                q_msg = dict()
+                q_msg['chat_id'] = chat_id
+                q_msg['user_id'] = user_id
+                q_msg['operation_uuid4'] = operation_uuid4
+                q_msg['type'] = "signature"
+                q_msg['content'] = transaction
+                q.put(q_msg)
+    except:
+        logging.error("failed processing signature transaction callback")
+    return jsonify({'authorization': 'received'}), 200
+
 """
 Example of a auth transaction APPROVED:
     {
@@ -206,32 +230,6 @@ Example of a transaction REFUSED:
     'transactionId': '8f52c58f-9f69-44e9-b716-d7dc1c69a6b4'
     }
 """
-
-@app.route('/api/v1.0/sign/<int:chat_id>/<int:user_id>/<string:operation_uuid4>', methods=['POST'])
-def get_signature(chat_id,user_id,operation_uuid4):
-    if any([ not request.json,
-             not operation_uuid4,
-             not chat_id,
-             not user_id ]):
-        logging.debug(request)
-        abort(400)
-    # process callback
-    try:
-        logging.debug(request)
-        for transaction in request.json:
-            if transaction['approved'] == 1:
-                q_msg = dict()
-                q_msg['chat_id'] = chat_id
-                q_msg['user_id'] = user_id
-                q_msg['operation_uuid4'] = operation_uuid4
-                q_msg['type'] = "signature"
-                q_msg['content'] = transaction
-                q.put(q_msg)
-    except:
-        logging.error("failed processing signature transaction callback")
-    return jsonify({'authorization': 'received'}), 200
-
-
 
 ############################
 # define telegram functions
