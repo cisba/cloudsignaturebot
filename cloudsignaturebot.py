@@ -1,8 +1,10 @@
 
 import sys 
+import os
 import yaml
 import logging
 import time
+import datetime
 import uuid
 import urllib.request
 import shutil
@@ -54,13 +56,24 @@ def acl_get_user_info(user_id):
     if user_id not in acl:
         return None
     return acl[user_id]
- 
+
+# directory based on isocalendar
+
+def iso_week_dir(basepath,days=0):
+    return basepath \
+        + '/' \
+        + str(datetime.date.today().isocalendar()[0]) \
+        + str((datetime.date.today()+datetime.timedelta(days)).isocalendar()[1]) \
+        + '/'
+
 # queue consumer
 def process_queue(args):
     (queue, bot, acl_set_status) = args
     while True:
         q_msg = queue.get()
-        logging.debug(q_msg)
+        logging.info('queue.get() : ' + repr(q_msg))
+
+        # auth transaction
         if q_msg['type'] == "authorization":
             transaction = q_msg['content']
             try:
@@ -69,35 +82,60 @@ def process_queue(args):
                 bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
                 logging.info('authorized user: ' + str(q_msg['user_id'])) 
             except:
-                logging.warning('error sending auth confirmation for transaction ' \
+                logging.warning('error sending auth confirmation for transaction '\
                                 + '\ncontent: ' + str(transaction) \
                                 + '\nbot: ' + str(bot) \
                                 + '\nchat_id: ' + str(q_msg['chat_id']) \
                                 + '\nuser_id: ' + str(q_msg['user_id']) )
+
+        # sign transaction
         elif q_msg['type'] == "signature":
-            transaction = q_msg['content']
+
+            # retrive file info
             try:
-                # retrive file info
                 operation_uuid4 = q_msg['operation_uuid4'] 
                 yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
-                with open(yml_pathname, 'r') as yml_file: docs = yaml.load(yml_file)
-                # TODO: pkbox sign
-                logging.info('user ' + q_msg['user_id'] \
-                              + ' signed documents: ' + str(docs)) 
-                # send signed files
-                message = 'You signed the following documents:'
+                logging.info("operation " + operation_uuid4 \
+                            + " retriving info from " + yml_pathname)
+                with open(yml_pathname, 'r') as yml_file: 
+                    docs = yaml.load(yml_file)
+                logging.info(repr(docs))
+            except: 
+                logging.warning('error retriving saved info for operation: '\
+                                + operation_uuid4)
+
+            # TODO: pkbox sign
+            transaction = q_msg['content']
+            directory = iso_week_dir(cfg['storage']) 
+            if not os.path.exists(directory + docs['list'][0]['file_id']):
+                directory = iso_week_dir(cfg['storage'],days=-7)
+            if not os.path.exists(directory + docs['list'][0]['file_id']):
+                logging.critical("not found" + directory \
+                                + docs['list'][0]['file_id'])
+            for file_item in docs['list']:
+                pathname = directory + file_item['file_id']
+                logging.info("signing file: " + pathname)
+            logging.info('user ' + str(q_msg['user_id']) \
+                              + ' signed documents in operation: ' \
+                              + operation_uuid4 ) 
+           # try:
+           # except:
+           #     logging.warning('error signing document for operationtion:'\
+           #                     + operation_uuid4) 
+
+            # send message and signed files
+            if True:
+                message = 'You signed the following:'
                 bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
-                for file_id in docs['list']:
-                    bot.sendDocument(chat_id=chat_id, 
-                                     document=open(cfg['storage']+'/'+file_id, 'rb'),
-                                     filename=file_id['file_name'])
-            except:
-                logging.warning('error signing document for transaction ' \
-                                + '\ncontent: ' + str(transaction) \
-                                + '\nbot: ' + str(bot) \
-                                + '\ndoc:' + str(docs) \
-                                + '\nchat_id: ' + str(q_msg['chat_id']) \
-                                + '\nuser_id: ' + str(q_msg['user_id']) )
+                for file_item in docs['list']:
+                    bot.sendDocument( chat_id=q_msg['chat_id'], 
+                        document=open(directory + file_item['file_id'], 'rb'),
+                        filename=file_item['file_name'])
+            else:
+                logging.warning('error sending signed documents for operation: ' 
+                                + operation_uuid4 \
+                                + '\ntransaction: ' + repr(transaction) )
+            # TODO: remove files
         q.task_done()
 
 
@@ -114,11 +152,10 @@ def not_found(error):
 
 @app.route('/api/v1.0/authorize/<int:chat_id>/<int:user_id>', methods=['POST'])
 def get_authorization(chat_id,user_id):
-    if not request.json:
+    if any([ not request.json,
+             not user_id, 
+             not chat_id ]):
         logging.debug(request)
-        abort(400)
-    if not user_id or not chat_id :
-        loggign.debug(request)
         abort(400)
     # process callback
     try:
@@ -135,7 +172,7 @@ def get_authorization(chat_id,user_id):
     return jsonify({'authorization': 'received'}), 200
 
 """
-Example of a transaction APPROVED:
+Example of a auth transaction APPROVED:
     {
     'pin': '', 
     'result': [], 
@@ -145,6 +182,22 @@ Example of a transaction APPROVED:
     'otp': 'E77337B8CC3FD9C5DB805B123259149BC9313A169D9319157187D91205214CFC', 
     'antiFraud': '[]'
     } 
+
+Example of a sign transaction APPROVED:
+
+    {
+    'result': ['@pin'], 
+    'pin': 'xI1lhMbAiALTCZ3I71bQIQ==', 
+    'otp': '{ 
+            "SessionKey":"Z4NnyTUgUePgSNSAgPiiysY2yIB+lSZg1xXUArOK1zJq11JqqCJ3plTGysynjeu1uhHSM\\/4SvaBHqDjL6NIjmustOITo2dOf3DVzTyk3RIjCh9XWANNWFhgaMMmWI6B8NBA\\/tQ6+bztTt4PJ3OJwwdAI0u\\/EuDZLSCvdcUfohyg=",
+            "KeyPIN":"BNcuQZWbdcpZeMESzTPfKA==",
+            "Ciphered":true
+            }', 
+    'applicationId': None, 
+    'approved': 1, 
+    'transactionId': 'd6d76bdc-23ab-473d-b9c8-a9632c147656', 
+    'antiFraud': '[]'
+    }
 
 Example of a transaction REFUSED:
     {
@@ -156,11 +209,11 @@ Example of a transaction REFUSED:
 
 @app.route('/api/v1.0/sign/<int:chat_id>/<int:user_id>/<string:operation_uuid4>', methods=['POST'])
 def get_signature(chat_id,user_id,operation_uuid4):
-    if not request.json:
+    if any([ not request.json,
+             not operation_uuid4,
+             not chat_id,
+             not user_id ]):
         logging.debug(request)
-        abort(400)
-    if not operation_uuid4 or not chat_id :
-        loggign.debug(request)
         abort(400)
     # process callback
     try:
@@ -196,7 +249,7 @@ def status(bot, update):
     user_info = acl_get_user_info(update.message.from_user.id)
     if not user_info:
         return
-    if user_info['status'] == "approved":
+    if user_info['status'] == "authorized":
         text="You are already authorized to use Valid account *" \
              + str(user_info['time4mind_account']) +'*' 
     elif user_info['status'] == "waiting authorization":
@@ -249,7 +302,7 @@ def sign_single_document(bot, update):
     operation_uuid4 = str(uuid.uuid4())
     if not user_info:
         text="You are not yet authorized"
-    if user_info['status'] == "approved":
+    if user_info['status'] == "authorized":
         doc_info = update.message.document.__dict__
         # {'mime_type': 'application/pdf', 'file_id': 'BQADBAADbwADNnbhUZSE6H4S95PIAg', 'file_name': '2017_ci_01_28.pdf', 'file_size': 71689}
         file_id = doc_info['file_id']
@@ -263,12 +316,17 @@ def sign_single_document(bot, update):
         # save data to yaml
         yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
         with open(yml_pathname, 'w+') as yml_file: yml_file.write(yaml.dump(docs))
+        logging.info("operation " + operation_uuid4 \
+                    + " saved docs to " + yml_pathname)
         # request to sign
         signMobileRequest(user_info,docs) 
         text="Request to sign sent to your Valid app"
         # download file 
+        directory = iso_week_dir(cfg['storage'])
+        if not os.path.exists(directory):
+                os.makedirs(directory)
         with urllib.request.urlopen(doc_info['file_path']) as response, \
-             open(cfg['storage'] + '/' + doc_info['file_name'], 'wb') as out_file:
+             open(directory + doc_info['file_id'], 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
 
     elif user_info['status'] == "waiting authorization":
@@ -282,9 +340,9 @@ def signMobileRequest(user_info,docs):
         title = 'Signature Request'
         sender = '@CloudSignature_Bot'
         message = 'Documents to sign:'
-        for file_id in docs['list']:
-            message += '<li><a href=\"' + file_id['href'] + '\">' \
-                       + file_id['file_name'] + '</a></li>'
+        for file_item in docs['list']:
+            message += '<li><a href=\"' + file_item['href'] + '\">' \
+                       + file_item['file_name'] + '</a></li>'
         route = '/api/v1.0/sign/' \
                 + str(user_info['chat_id']) + '/' \
                 + str(user_info['id']) + '/' \
@@ -318,15 +376,6 @@ logging.basicConfig(level=logging.INFO,
                     filename=cfg['logfile'], filemode='w',
                     format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                     datefmt='%Y-%m-%d %H:%M')
-# define a Handler which writes INFO messages or higher to the sys.stderr
-console = logging.StreamHandler()
-console.setLevel(logging.DEBUG)
-# set a format which is simpler for console use
-formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
-# tell the handler to use this format
-console.setFormatter(formatter)
-# add the handler to the root logger
-logging.getLogger('').addHandler(console)
 
 # setup telegram updater and  dispatchers
 updater = Updater(token=cfg['bot']['token'])
