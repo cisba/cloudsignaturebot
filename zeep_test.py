@@ -6,8 +6,8 @@ from base64 import b64encode, b64decode
 
 file_pathname = "sec/validsign.pdf"
 result_pathname = "sec/SIGNED_validsign.pdf"
-signer = "CSBMNL66E25F205E"
-pin = "12345678"
+signer = ""
+pin = ""
 otp = str(sys.argv[1]) 
 #time = time.time() * 1000
 
