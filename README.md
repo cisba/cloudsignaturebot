@@ -10,7 +10,7 @@ The project rely on:
 ## Requirements and Installation
 
 * Python3 >= 3.4.2
-* libraries: PyYaml, requests, flask, python-telegram-bot
+* $pip install PyYaml requests flask python-telegram-bot Zeep
 * a PkBox server to process document signatures locally
 * Time4Mind ssl-client certificates to use webapi for strong authentication
 * signature certificates issued for your users on the Time4Mind platform
@@ -39,15 +39,17 @@ Run the command `python3 cloudsignaturebot.py time4mind.yml`
 ## Known Issues
 
 This is just a proof of concept, to incentivate building a real project, so the main limitation and isuues are: 
-* It should be possible to sign the same document by two or more users in a group chat.
+* It should be possible to sign the same document by two or more users in a group chat
 * It should be possible to sign a set of documents in one shot 
-* Management by user of more than one e-sign certificate is missing.
-* Data permanence should be granted. 
-* Python exposed api for callback should be secured.
-* Privacy of documents cannot be fully granted because Telegram does not support end-to-end chat encryption for bots.
+* Management by user of more than one e-sign certificate is missing
+* Data permanence on DB or cloud services
+* Python exposed api for callback should be secured
+* Privacy of documents cannot be fully granted because Telegram does not support end-to-end chat encryption for bots
 
 ## Credits
 
-* [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot)
+* [python-telegram-bot](https://python-telegram-bot.org/)
+* [Flask](http://flask.pocoo.org/)
+* [Zeep](http://flask.pocoo.org/)
 * [Designing a RESTful API with Python and Flask](https://blog.miguelgrinberg.com/post/designing-a-restful-api-with-python-and-flask)
 
