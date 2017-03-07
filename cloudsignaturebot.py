@@ -15,7 +15,7 @@ from telegram.ext import Updater, CommandHandler
 from telegram.ext import MessageHandler, Filters
 from telegram import Bot
 from flask import Flask, jsonify, abort, make_response, request
-
+from zeep import Client, xsd
 
 # methods for a "poor man" data persistence based on a yaml file
 
