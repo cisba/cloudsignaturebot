@@ -4,34 +4,61 @@ from zeep import Client, xsd
 from zeep.transports import Transport
 from base64 import b64encode, b64decode
 
+import logging.config
+
+logging.config.dictConfig({
+    'version': 1,
+    'formatters': {
+        'verbose': {
+            'format': '%(name)s: %(message)s'
+        }
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'zeep.transports': {
+            'level': 'DEBUG',
+            'propagate': True,
+            'handlers': ['console'],
+        },
+    }
+})
+
+
 file_pathname = "sec/validsign.pdf"
-result_pathname = "sec/SIGNED_validsign.pdf"
-signer = ""
-pin = ""
+#PDF_result_pathname = "sec/SIGNED_validsign.pdf"
+P7M_result_pathname = "sec/validsign.pdf.p7m"
+signer = "[INTESI-NAMIRIAL-TEST]_CSBMNL66E25F205E"
+pin = "12345678"
 otp = str(sys.argv[1]) 
-#time = time.time() * 1000
 
 session = Session()
 session.verify = False
 transport = Transport(session=session)
 client = Client('https://localhost:8443/pkserver/services/Envelope?wsdl', transport=transport)
+service = client.create_service(
+    '{http://soap.remote.pkserver.it}EnvelopeSoap11Binding',
+    'https://localhost:8443/pkserver/services/Envelope.EnvelopeHttpSoap11Endpoint/'
+    )
 
-#with open(file_pathname, 'rb') as f: buf = f.read()
-#document = b64encode(buf)
+with open(file_pathname, 'rb') as f: buf = f.read()
+document = b64encode(buf)
 #document = xmlrpclib.Binary( open('foo.pdf').read() )
+#document = open('foo.pdf').read() 
+#data=bytes("aaa", 'UTF-8')
+data = document
 
-#sign_type = client.get_type('ns0:sign')
-#sign = sign_type(mode=0, encoding=2, environment="default", data="aaa" )
-#result = client.service.Envelope(sign=sign)
-data=bytes("aaa", 'UTF-8')
-otp="123456"
-result = client.service.sign(mode=0, encoding=2, environment="default", data=data, signer=signer, pin=pin, signerPin=otp, date=datetime.date.today(), customerinfo="none")
-#result = client.service.sign(signer=signer, pin=pin, signerPin=otp, data=document)
+result = service.sign(mode=1, encoding=2, environment="default", data=data, signer=signer, pin=pin, signerPin=otp, date=datetime.date.today(), customerinfo="none")
 #result = client.service.pdfsign(signer=signer, pin=pin, signerPin=otp, document=document, fieldName="", image="")
 #result = document
 #print(repr(result))
 signed_doc = result
-with open(result_pathname,'wb+') as f: f.write(signed_doc)
+with open(P7M_result_pathname,'wb+') as f: f.write(signed_doc)
 
 '''
 pdfsign(
