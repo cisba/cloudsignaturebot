@@ -1,0 +1,27 @@
+# YAML 1.1
+# Time4Mind example configuration for production environment
+
+bot:
+    name: CloudSignature
+    username: '@CloudSignature_Bot'
+    token: secret
+
+webserver:
+    endpoint: https://example.com
+
+acl: sec/acl.yml
+logfile: sec/cloudsignaturebot.log
+storage: sec/storage
+
+time4user:
+    endpoint: https://services.time4mind.com/Time4UserServices/services/backend/t4ujson
+    cert: sec/time4user.crt
+    key: sec/time4user.key
+
+time4id:
+    endpoint: https://t4eid.time4mind.com/Time4eIDv2/backend/auth
+    cert: sec/time4id.crt
+    key: sec/time4id.key
+
+pkbox:
+    hostname: localhost:8443
