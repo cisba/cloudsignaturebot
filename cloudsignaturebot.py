@@ -1,3 +1,7 @@
+"""This is the Cloud Signature Bot based on Time4Mind and Telegram
+
+It allow to sign documents using a Telegram chat and a Time4Mind account
+"""
 
 import sys 
 import os
@@ -8,6 +12,8 @@ import datetime
 import uuid
 import urllib.request
 import shutil
+import re
+import magic
 from threading import Thread
 from queue import Queue
 from time4mind import Time4Mind
@@ -15,7 +21,7 @@ from telegram.ext import Updater, CommandHandler
 from telegram.ext import MessageHandler, Filters
 from telegram import Bot
 from flask import Flask, jsonify, abort, make_response, request
-from zeep import Client, xsd
+from pkboxsoap import PkBoxSOAP
 
 # methods for a "poor man" data persistence based on a yaml file
 
@@ -97,39 +103,66 @@ def process_queue(args):
 
             # sign
             transaction = q_msg['content']
-            parent_dir = str(q_msg['chat_id'])
-            directory = parent_dir + '/' + operation_uuid4
-            if not os.path.isdir(directory):
-                logging.critical("not found" + directory)
+            parent_dir = cfg['storage'] + '/' + str(q_msg['chat_id'])
+            directory = parent_dir + '/' + operation_uuid4 + '/'
             for file_item in docs['list']:
+                # retrive user certificate alias
+                user_info = acl_get_user_info(q_msg['user_id'])
+                signer = user_info['cred']['alias']
+                if 'domain' in cfg['pkbox'] and cfg['pkbox']['domain'] == "open":
+                    signer = '[' + user_info['cred']['domain'] + ']_' + signer
+                # retrive file info
                 pathname = directory + file_item['file_id']
-                if not os.path.exists(pathname):
-                    logging.critical("not found" + pathname)
+                filetype = 'p7m'
+                if re.match(r'PDF document.*', magic.from_file(pathname)):
+                    filetype = 'pdf'
+                # call pkbox for signing 
+                logging.info("signing file: " + pathname)
+                result = sign_service.envelope(pathname, filetype, signer,
+                                                    transaction['pin'], 
+                                                    transaction['otp'])
+                # evaluate result
+                if result == 'ok':
+                    index = docs['list'].index(file_item)
+                    if filetype == "pdf":
+                        docs['list'][index]['new_name'] = \
+                            'SIGNED_' + docs['list'][index]['file_name']
+                    else:
+                        docs['list'][index]['new_name'] = \
+                            docs['list'][index]['file_name'] + '.p7m'
+                    logging.info('user ' + str(q_msg['user_id']) \
+                                      + ' signed documents in operation: ' \
+                                      + operation_uuid4 ) 
                 else:
-                    logging.info("signing file: " + pathname)
-                    # here call pkbox for real sign job
-                    # TODO
-            logging.info('user ' + str(q_msg['user_id']) \
-                              + ' signed documents in operation: ' \
-                              + operation_uuid4 ) 
-           # try:
-           # except:
-           #     logging.warning('error signing document for operationtion:'\
-           #                     + operation_uuid4) 
+                    logging.warning(result + ' signing document for operation:'\
+                            + operation_uuid4) 
+                    # TODO:
+                    # if pdfsign fail it is possible that pdf is invalid
+                    # (i.e.: corrupted or protected with a password)
+                    # so should return a msg to request sign it as p7m
 
             # send message and signed files
-            message = 'You signed the following:'
+            message = 'File signing result:'
             bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
             for file_item in docs['list']:
-                file_pathname = directory + file_item['file_id']
-                new_name='SIGNED_' + file_item['file_name']
-                bot.sendDocument( chat_id=q_msg['chat_id'], 
-                    document=open(file_pathname, 'rb'),
-                    filename=new_name)
-                os.remove(file_pathname)
-            # remove yaml
+                pathname = directory + file_item['file_id']
+                if not 'new_name' in file_item:
+                    message = 'Error signing file: ' + file_item['file_name']
+                    bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
+                elif not os.path.exists(pathname):
+                    logging.warning("not found " + pathname)
+                    message = 'Error reading signed file: ' + file_item['new_name']
+                    bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
+                else:
+                    bot.sendDocument( chat_id=q_msg['chat_id'], 
+                        document=open(pathname, 'rb'),
+                        filename=file_item['new_name'])
+                os.remove(pathname)
+
+            # remove yaml file and operation dir
             os.remove(yml_pathname)
             os.rmdir(directory)
+            # try remove also chat_id dir if empty
             try:
                 os.rmdir(parent_dir)
             except:
@@ -320,11 +353,11 @@ def sign_single_document(bot, update):
         signMobileRequest(user_info,docs) 
         text="Request to sign sent to your Valid app"
         # download file 
-        directory = str(chat_id) + '/' + operation_uuid4
+        directory = cfg['storage'] + '/' + str(chat_id) + '/' + operation_uuid4 + '/'
         if not os.path.exists(directory):
                 os.makedirs(directory)
         with urllib.request.urlopen(doc_info['file_path']) as response, \
-             open(directory + doc_info['file_id'], 'wb') as out_file:
+                open(directory + doc_info['file_id'], 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
 
     elif user_info['status'] == "waiting authorization":
@@ -399,6 +432,9 @@ dispatcher.add_handler(sign_handler)
 q = Queue(maxsize=100)
 bot = Bot(cfg['bot']['token'])
 dispatcher.run_async(process_queue,(q,bot,acl_set_status))
+
+# setup pkbox handler to sign
+sign_service = PkBoxSOAP()
 
 # run updater and webserver as a threads
 webserver_thread = Thread(target=flask_thread, name='webserver')

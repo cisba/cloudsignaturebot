@@ -24,6 +24,4 @@ time4id:
     key: sec/time4id.key
 
 pkbox:
-    domain: INTESI-NAMIRIAL-TEST
-    endpoint: https://localhost:8443/pkserver/servlet/defaulthandler
-    securePin: sec/SecurePin.crt
+    hostname: localhost:8443

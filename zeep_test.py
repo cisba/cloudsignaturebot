@@ -62,6 +62,7 @@ document=buf
 #document = xmlrpclib.Binary( buf )
 
 filetype = magic.from_file(file_pathname)
+filetype = "none"
 if re.match(r'PDF document.*',filetype):
     result = service.pdfsign(environment="default", signer=signer, pin=pin, signerPin=otp, 
                              date=datetime.date.today(), customerinfo="none",
