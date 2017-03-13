@@ -75,7 +75,7 @@ def process_queue(args):
             transaction = q_msg['content']
             try:
                 acl_set_status(q_msg['chat_id'],"authorized")
-                message = 'You have been authorized'
+                message = 'You have been authorized. Now send me a file to sign!'
                 bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
                 logging.info('authorized user: ' + str(q_msg['user_id'])) 
             except:
@@ -92,11 +92,11 @@ def process_queue(args):
             try:
                 operation_uuid4 = q_msg['operation_uuid4'] 
                 yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
-                logging.info("operation " + operation_uuid4 \
+                logging.info("process_queue() operation " + operation_uuid4 \
                             + " retriving info from " + yml_pathname)
                 with open(yml_pathname, 'r') as yml_file: 
                     docs = yaml.load(yml_file)
-                logging.info(repr(docs))
+                #logging.info(repr(docs))
             except: 
                 logging.warning('error retriving saved info for operation: '\
                                 + operation_uuid4)
@@ -117,7 +117,8 @@ def process_queue(args):
                 if re.match(r'PDF document.*', magic.from_file(pathname)):
                     filetype = 'pdf'
                 # call pkbox for signing 
-                logging.info("signing file: " + pathname)
+                logging.info("process_queue() operation " + operation_uuid4 \
+                        + "signing file: " + pathname)
                 result = sign_service.envelope(pathname, filetype, signer,
                                                     transaction['pin'], 
                                                     transaction['otp'])
@@ -134,7 +135,8 @@ def process_queue(args):
                                       + ' signed documents in operation: ' \
                                       + operation_uuid4 ) 
                 else:
-                    logging.warning(result + ' signing document for operation:'\
+                    logging.warning("envelope() returned " + result 
+                            + ' signing document for operation:'\
                             + operation_uuid4) 
                     # TODO:
                     # if pdfsign fail it is possible that pdf is invalid
@@ -347,7 +349,7 @@ def sign_single_document(bot, update):
         # save data to yaml
         yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
         with open(yml_pathname, 'w+') as yml_file: yml_file.write(yaml.dump(docs))
-        logging.info("operation " + operation_uuid4 \
+        logging.info("sign_single_document() operation " + operation_uuid4 \
                     + " saved docs to " + yml_pathname)
         # request to sign
         signMobileRequest(user_info,docs) 
@@ -384,9 +386,9 @@ def signMobileRequest(user_info,docs):
                                             user_info['cred']['otpProvider'],
                                             title,sender,message,
                                             user_info['cred']['label'],route)
-            logging.info("request signature sent for user: " + str(user_info['id']) \
-                         + "\ntransaction: " + str(user_info['last_transaction']) \
-                         + "\noperation: " + str(docs['operation_uuid4']))
+            logging.info("signMobileRequest() sent to user: " + str(user_info['id']) \
+                         + " - operation: " + str(docs['operation_uuid4']) \
+                         + " - transaction: " + str(user_info['last_transaction']) )
         except:
             logging.warning("failed to request signature authorization")
         try:
