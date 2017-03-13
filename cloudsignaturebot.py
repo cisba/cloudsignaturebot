@@ -122,7 +122,7 @@ def process_queue(args):
                                                     transaction['pin'], 
                                                     transaction['otp'])
                 # evaluate result
-                if result == 'ok':
+                if result == 'ok' or True:
                     index = docs['list'].index(file_item)
                     if filetype == "pdf":
                         docs['list'][index]['new_name'] = \
