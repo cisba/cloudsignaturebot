@@ -10,7 +10,7 @@ The project rely on:
 ## Requirements and Installation
 
 * Python3 >= 3.4.2
-* $pip install PyYaml requests flask python-telegram-bot Zeep
+* $pip install PyYaml requests flask python-telegram-bot Zeep python-magic
 * a PkBox server to process document signatures locally
 * Time4Mind ssl-client certificates to use webapi for strong authentication
 * signature certificates issued for your users on the Time4Mind platform
@@ -53,3 +53,7 @@ This is just a proof of concept, to incentivate building a real project, so the 
 * [Zeep](http://flask.pocoo.org/)
 * [Designing a RESTful API with Python and Flask](https://blog.miguelgrinberg.com/post/designing-a-restful-api-with-python-and-flask)
 
+
+##License
+
+You may copy, distribute and modify the software provided that modifications are described and licensed for free under [LGPL-3](https://www.gnu.org/licenses/lgpl-3.0.html). Derivatives works (including modifications or anything statically linked to the library) can only be redistributed under LGPL-3, but applications that use the library don't have to be.
