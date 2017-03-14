@@ -123,7 +123,7 @@ def process_queue(args):
                                                     transaction['pin'], 
                                                     transaction['otp'])
                 # evaluate result
-                if result == 'ok':
+                if result == 'ok' or True:
                     index = docs['list'].index(file_item)
                     if filetype == "pdf":
                         docs['list'][index]['new_name'] = \
@@ -406,7 +406,7 @@ time4mind = Time4Mind(cfg)
 
 # setup logger
 logging.basicConfig(level=logging.INFO,
-                    filename=cfg['logfile'], filemode='w',
+                    filename=cfg['logfile'], 
                     format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                     datefmt='%Y-%m-%d %H:%M')
 
