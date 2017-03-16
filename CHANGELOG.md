@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ## [Unreleased]
 ### Added
 - LGPL 3.0 license
+- time4mind_test.py
 ### Changed
 ### Fixed
+- skip certificates with certificateStatus != ATTIVO
 - sign_test.py utility aligned with updated pkboxsoap.py
 - module python-magic was not declared in README.md
+- other minor fixes in README.md and RHEL.md
 ### Removed
 ### Security
 ### Deprecated
