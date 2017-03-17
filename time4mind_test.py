@@ -28,6 +28,7 @@ user_info['status'] = 'waiting authorization'
 cred = time4mind.getMobileActiveCredentials(user_info['time4mind_account'])
 if len(cred) > 0:
     for c in cred:
+        print('---------------------------------------------')
         pprint(c)
         tokenInfo = time4id.getTokenInfo(c['otpId'],c['otpProvider'])
         pprint(tokenInfo)
@@ -38,9 +39,7 @@ if len(cred) > 0:
             if result:
                 pprint(result)
             else:
-                pprint(tokenInfo)
                 print('ERROR: authorize() call failed!')
         else:
-            pprint(c)
             print('ERROR: getTokenInfo() call failed!')
 

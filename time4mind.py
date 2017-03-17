@@ -168,8 +168,11 @@ class Time4Mind():
                 c = dict((k, todo_item[k]) for k in ('alias','domain','label'))
                 c['otpId'] = todo_item['otpDetails']['otpId'] 
                 c['otpProvider'] = todo_item['otpDetails']['otpProvider'] 
+                # remove OTP not responding to Time4Id backend 
+                if not self.time4id.getTokenInfo(c['otpId'],c['otpProvider']) : continue
                 # 0=sms, 1=app, 2=email
                 c['otpMode'] = todo_item['otpDetails']['otpMode'] 
+                c['dump'] = todo_item 
                 result += [c]
         return result
 
