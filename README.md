@@ -25,8 +25,8 @@ Time4Mind ssl certificates are provided as PKCS12 files. You have to extract fro
 ```
 openssl pkcs12 -nodes -nocerts -in time4id.p12 -out time4id.key
 openssl pkcs12 -nokeys -in time4id.p12 -out time4id.crt
-openssl pkcs12 -nodes -nocerts -in time4id.p12 -out time4id.key
-openssl pkcs12 -nokeys -in time4id.p12 -out time4id.crt
+openssl pkcs12 -nodes -nocerts -in time4user.p12 -out time4user.key
+openssl pkcs12 -nokeys -in time4user.p12 -out time4user.crt
 ```
 End user signature certificates will be soon available at the [Intesi Group Store](https://www.intesigroup.com).
 
