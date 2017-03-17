@@ -309,24 +309,28 @@ def link(bot, update, args):
         user_info['display_name'] = user_info['first_name'] + ' ' + user_info['last_name']
     else:
         user_info['display_name'] = user_info['first_name'] 
+    logging.info("/link command received from user: " + user_info['time4mind_account'])
     # look for credentials
     cred = time4mind.getMobileActiveCredentials(user_info['time4mind_account'])
-    if len(cred) > 0:
-        user_info['cred'] = cred[0] 
-    # send request
-    route = '/api/v1.0/authorize/' + str(user_info['chat_id']) \
-            + '/' + str(user_info['id'])
-    try:
-        user_info['last_transaction'] = time4mind.authorize(user_info,route)
-        # save user data
-        acl_update(user_info)
-        # message user
-        message = 'I sent an authorization request to your Valid app'
-        #message += '\n\n'+str(user_info)
-        #message += '\n\n'+str(bot)
+    if len(cred) < 1:
+        logging.warning("/link command did not found valid credentials for user: " + user_info['time4mind_account'])
+        message = 'Error sending an authorization request to this account'
         bot.sendMessage(chat_id=update.message.chat_id, text=message)
-    except:
-         logging.warning("failed to request account usage authorization")
+    else:
+        # TODO: choice if credentials > 1
+        user_info['cred'] = cred[0] 
+        # send request
+        route = '/api/v1.0/authorize/' + str(user_info['chat_id']) \
+                + '/' + str(user_info['id'])
+        try:
+            user_info['last_transaction'] = time4mind.authorize(user_info,route)
+            # save user data
+            acl_update(user_info)
+            # message user
+            message = 'I sent an authorization request to your Valid app'
+            bot.sendMessage(chat_id=update.message.chat_id, text=message)
+        except:
+            logging.warning("failed to request account usage authorization")
 
 
 def sign_single_document(bot, update):
@@ -405,7 +409,7 @@ with open(sys.argv[1], 'r') as yml_file: cfg = yaml.load(yml_file)
 time4mind = Time4Mind(cfg)
 
 # setup logger
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     filename=cfg['logfile'], 
                     format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                     datefmt='%Y-%m-%d %H:%M')
