@@ -24,20 +24,20 @@ class PkBoxSOAP:
             self.hostname = conf['hostname']
         else:
             self.hostname = 'localhost:8443'
-
+        level = 'DEBUG'
         logging.config.dictConfig({
             'version': 1,
             'loggers': {
                 'zeep.transports': {
-                    'level': 'WARNING',
+                    'level': level,
                     'propagate': True,
                 },
                 'zeep.xsd': {
-                    'level': 'WARNING',
+                    'level': level,
                     'propagate': True,
                 },
                 'zeep.wsdl': {
-                    'level': 'ERROR',
+                    'level': level,
                     'propagate': True,
                 },
             }

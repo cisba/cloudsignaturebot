@@ -15,7 +15,10 @@ class Time4MindRPC:
         conf -- the configuration dictionary
         """
         self.endpoint = conf['endpoint']
-        self.cert = (conf['cert'], conf['key'])
+        if 'cert' in conf and 'key' in conf:
+            self.cert = (conf['cert'], conf['key'])
+        else:
+            self.cert = None
         if 'restHook' in conf:
             self.restHook = conf['restHook']
         else:
@@ -42,13 +45,15 @@ class Time4MindRPC:
         if params: self.payload['params'] = params
         j_payload = self.payload
         logging.debug('postRPC call payload: ' + json.dumps(self.payload))
-        resp = requests.post(self.endpoint, cert=self.cert, json=j_payload, headers=self.headers)
+        resp = requests.post(self.endpoint, cert=self.cert, 
+                             json=j_payload, headers=self.headers)
         if resp.status_code != 200: resp.raise_for_status()
         try:    
             logging.debug('postRPC response: ' + repr(resp.json()['result']))
             return resp.json()['result']
         except:
-            logging.warning('Got 200.. but not result! resp.content is: '+str(resp.content))
+            logging.warning('Got 200.. but not result! resp.content is: ' \
+                            +str(resp.content))
             return None
 
 
@@ -56,7 +61,8 @@ class Time4UserRPC(Time4MindRPC):
     """class for Time4User RPC call derived from Time4MindRPC"""
         
     def listSignCredentials(self,user):
-        """map to Time4User listCredentials method, requiring only signature flavour
+        """map to Time4User listCredentials method, 
+           requiring only signature flavour
         
         Keyword arguments:
         user -- a dictionary with user attributes
@@ -153,7 +159,7 @@ class Time4Mind():
         """
         credentials = self.time4user.listSignCredentials(user)
         result = []
-        if credentials:
+        if 'credentialsData' in credentials and credentials['credentialsData']:
             # Now clean the list
             for todo_item in credentials['credentialsData']:
                 logging.debug('found credential: ' + repr(todo_item))

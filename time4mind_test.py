@@ -42,4 +42,6 @@ if len(cred) > 0:
                 print('ERROR: authorize() call failed!')
         else:
             print('ERROR: getTokenInfo() call failed!')
+else:
+    print("time4mind.getMobileActiveCredentials() returned None for account: "+user_info['time4mind_account'])
 
