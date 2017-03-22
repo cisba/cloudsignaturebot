@@ -24,20 +24,27 @@ class PkBoxSOAP:
             self.hostname = conf['hostname']
         else:
             self.hostname = 'localhost:8443'
-        level = 'DEBUG'
+        if 'environment' in conf:
+            self.environment = conf['environment']
+        else:
+            self.environment = 'default'
+        if 'loglevel' in conf:
+            self.loglevel = conf['loglevel']
+        else:
+            self.loglevel = 'WARNING'
         logging.config.dictConfig({
             'version': 1,
             'loggers': {
                 'zeep.transports': {
-                    'level': level,
+                    'level': self.loglevel,
                     'propagate': True,
                 },
                 'zeep.xsd': {
-                    'level': level,
+                    'level': 'WARNING',
                     'propagate': True,
                 },
                 'zeep.wsdl': {
-                    'level': level,
+                    'level': 'ERROR',
                     'propagate': True,
                 },
             }
@@ -78,19 +85,21 @@ class PkBoxSOAP:
         ret_val = 'ok'
         if filetype == 'pdf':
             try:
-                result = service.pdfsign(environment="default", signer=signer, pin=pin, signerPin=otp, 
-                                         date=datetime.date.today(), customerinfo=None,
+                result = service.pdfsign(environment=self.environment, signer=signer, pin=pin, signerPin=otp, 
+                                         date=datetime.date.today(),
                                          document=document, 
                                          fieldName=None, image=None, page=-1, position=0, x=0, y=0)
-            except:
-                ret_val = 'pdfsign_error'
+            except Exception as inst:
+                logging.warning(inst.args) 
+                ret_val = inst.args
         else:
             try:
-                result = service.sign(environment="default", signer=signer, pin=pin, signerPin=otp, 
-                                      date=datetime.date.today(), customerinfo=None,
+                result = service.sign(environment=self.environment, signer=signer, pin=pin, signerPin=otp, 
+                                      date=datetime.date.today(),
                                       data=document, mode=1, encoding=1 )
-            except:
-                ret_val = 'sign_error'
+            except Exception as inst:
+                logging.warning(inst.args) 
+                ret_val = inst.args
         # file overwrite with signed one
         if ret_val == 'ok': 
             try:

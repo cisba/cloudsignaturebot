@@ -73,18 +73,18 @@ def process_queue(args):
         # auth transaction
         if q_msg['type'] == "authorization":
             transaction = q_msg['content']
+            acl_set_status(q_msg['chat_id'],"authorized")
+            message = 'You have been authorized. Now send me a file to sign!'
             try:
-                acl_set_status(q_msg['chat_id'],"authorized")
-                message = 'You have been authorized. Now send me a file to sign!'
                 bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
-                logging.info('authorized user: ' + str(q_msg['user_id'])) 
             except:
                 logging.warning('error sending auth confirmation for transaction '\
                                 + '\ncontent: ' + str(transaction) \
                                 + '\nbot: ' + str(bot) \
                                 + '\nchat_id: ' + str(q_msg['chat_id']) \
                                 + '\nuser_id: ' + str(q_msg['user_id']) )
-
+            else:
+                logging.info('authorized user: ' + str(q_msg['user_id'])) 
         # sign transaction
         elif q_msg['type'] == "signature":
 
@@ -178,7 +178,11 @@ def process_queue(args):
 app = Flask(__name__)
 # function to start webserver as a thread
 def flask_thread():
-    app.run(debug=True, use_reloader=False)
+    if 'listenaddr' in cfg['webserver']:
+        listenaddr = cfg['webserver']['listenaddr']
+    else:
+        listenaddr = '127.0.0.1'
+    app.run(host=listenaddr,debug=True, use_reloader=False)
 
 @app.errorhandler(404)
 def not_found(error):
@@ -337,6 +341,8 @@ def sign_single_document(bot, update):
     user_info = acl_get_user_info(update.message.from_user.id)
     chat_id = update.message.chat_id
     operation_uuid4 = str(uuid.uuid4())
+    logging.info("sign_single_document() operation " + operation_uuid4 \
+                + " for user " + user_info)
     if not user_info:
         text="You are not yet authorized"
     if user_info['status'] == "authorized":
@@ -390,11 +396,12 @@ def signMobileRequest(user_info,docs):
                                             user_info['cred']['otpProvider'],
                                             title,sender,message,
                                             user_info['cred']['label'],route)
+        except:
+            logging.warning("failed to request signature authorization")
+        else:
             logging.info("signMobileRequest() sent to user: " + str(user_info['id']) \
                          + " - operation: " + str(docs['operation_uuid4']) \
                          + " - transaction: " + str(user_info['last_transaction']) )
-        except:
-            logging.warning("failed to request signature authorization")
         try:
             acl_update(user_info)
         except:
