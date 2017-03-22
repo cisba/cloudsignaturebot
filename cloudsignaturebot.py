@@ -343,9 +343,12 @@ def sign_single_document(bot, update):
     operation_uuid4 = str(uuid.uuid4())
     logging.info("sign_single_document() operation " + operation_uuid4 \
                 + " for user " + user_info)
-    if not user_info:
+    if not user_info or 'status' not in user_info:
         text="You are not yet authorized"
-    if user_info['status'] == "authorized":
+    elif user_info['status'] == "waiting authorization":
+        text="Sorry but I'm still waiting your authorization from Valid app\n" \
+             + str(user_info) 
+    elif user_info['status'] == "authorized":
         doc_info = update.message.document.__dict__
         # {'mime_type': 'application/pdf', 'file_id': 'BQADBAADbwADNnbhUZSE6H4S95PIAg', 'file_name': '2017_ci_01_28.pdf', 'file_size': 71689}
         file_id = doc_info['file_id']
@@ -372,11 +375,6 @@ def sign_single_document(bot, update):
                 open(directory + doc_info['file_id'], 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
 
-    elif user_info['status'] == "waiting authorization":
-        text="Sorry but I'm still waiting your authorization from Valid app\n" \
-             + str(user_info) 
-    else:
-        text="You are not yet authorized"
     bot.sendMessage(chat_id=update.message.chat_id, text=text, parse_mode="Markdown") 
 
 def signMobileRequest(user_info,docs):
