@@ -118,13 +118,13 @@ def process_queue(args):
                     filetype = 'pdf'
                 # call pkbox for signing 
                 logging.info("process_queue() operation " + operation_uuid4 \
-                        + "signing file: " + pathname)
+                        + " signing file: " + pathname) 
                 result = sign_service.envelope(pathname, filetype, signer,
-                                                    transaction['pin'], 
-                                                    transaction['otp'])
+                                                    str(transaction['pin']), 
+                                                    str(transaction['otp']))
                 # evaluate result
-                if result == 'ok' or True:
-                    index = docs['list'].index(file_item)
+                index = docs['list'].index(file_item)
+                if result == 'ok':
                     if filetype == "pdf":
                         docs['list'][index]['new_name'] = \
                             'SIGNED_' + docs['list'][index]['file_name']
@@ -135,21 +135,21 @@ def process_queue(args):
                                       + ' signed documents in operation: ' \
                                       + operation_uuid4 ) 
                 else:
-                    logging.warning("envelope() returned " + result 
+                    docs['list'][index]['result'] = str(result)
+                    logging.warning("envelope() returned " + str(result) 
                             + ' signing document for operation:'\
                             + operation_uuid4) 
+
                     # TODO:
-                    # if pdfsign fail it is possible that pdf is invalid
-                    # (i.e.: corrupted or protected with a password)
-                    # so should return a msg to request sign it as p7m
+                    # if pdfsign fail because protected with a password)
+                    # it should return a msg to request sign it as p7m
 
             # send message and signed files
-            message = 'File signing result:'
-            bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
             for file_item in docs['list']:
                 pathname = directory + file_item['file_id']
                 if not 'new_name' in file_item:
-                    message = 'Error signing file: ' + file_item['file_name']
+                    message = 'Error signing file: ' + file_item['file_name'] \
+                            + " with result " + file_item['result']
                     bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
                 elif not os.path.exists(pathname):
                     logging.warning("not found " + pathname)
@@ -257,6 +257,7 @@ Example of a sign transaction APPROVED:
             }', 
     'applicationId': None, 
     'approved': 1, 
+    'docSignatureResult': '[]', 
     'transactionId': 'd6d76bdc-23ab-473d-b9c8-a9632c147656', 
     'antiFraud': '[]'
     }
@@ -342,7 +343,7 @@ def sign_single_document(bot, update):
     chat_id = update.message.chat_id
     operation_uuid4 = str(uuid.uuid4())
     logging.info("sign_single_document() operation " + operation_uuid4 \
-                + " for user " + user_info)
+                + " for user " + str(user_info))
     if not user_info or 'status' not in user_info:
         text="You are not yet authorized"
     elif user_info['status'] == "waiting authorization":
@@ -477,7 +478,7 @@ bot = Bot(cfg['bot']['token'])
 dispatcher.run_async(process_queue,(q,bot,acl_set_status))
 
 # setup pkbox handler to sign
-sign_service = PkBoxSOAP()
+sign_service = PkBoxSOAP(cfg['pkbox'])
 
 # run updater and webserver as a threads
 webserver_thread = Thread(target=flask_thread, name='webserver')

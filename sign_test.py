@@ -2,6 +2,10 @@ import sys, magic, re, yaml
 import logging
 from pkboxsoap import PkBoxSOAP
 
+if len(sys.argv) != 6 :
+    print("usage: python sign_test.py <config.yml> <file2sign.pdf> <signer_alias> <pin> <otp>")
+    sys.exit()
+
 with open(sys.argv[1], 'r') as yml_file: cfg = yaml.load(yml_file)
 sign_service = PkBoxSOAP(cfg['pkbox'])
 pathname = str(sys.argv[2])

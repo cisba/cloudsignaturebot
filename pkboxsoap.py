@@ -80,9 +80,8 @@ class PkBoxSOAP:
         try:
             with open(pathname, 'rb') as f: document = f.read()
         except:
-            ret_val = 'read_error'
+            return 'read_error'
         # detect file format
-        ret_val = 'ok'
         if filetype == 'pdf':
             try:
                 result = service.pdfsign(environment=self.environment, signer=signer, pin=pin, signerPin=otp, 
@@ -90,22 +89,21 @@ class PkBoxSOAP:
                                          document=document, 
                                          fieldName=None, image=None, page=-1, position=0, x=0, y=0)
             except Exception as inst:
-                logging.warning(inst.args) 
-                ret_val = inst.args
+                logging.debug(inst.args) 
+                return inst.args
         else:
             try:
                 result = service.sign(environment=self.environment, signer=signer, pin=pin, signerPin=otp, 
                                       date=datetime.date.today(),
                                       data=document, mode=1, encoding=1 )
             except Exception as inst:
-                logging.warning(inst.args) 
-                ret_val = inst.args
+                logging.debug(inst.args) 
+                return inst.args
         # file overwrite with signed one
-        if ret_val == 'ok': 
-            try:
-                with open(pathname,'wb+') as f: f.write(result)
-            except:
-                ret_val = 'overwrite_error'
-        # return filetype to manage new filename
-        return ret_val
+        try:
+            with open(pathname,'wb+') as f: f.write(result)
+        except:
+            return 'pkboxsoap overwrite error'
+        else:
+            return 'ok'
 
