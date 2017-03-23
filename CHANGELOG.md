@@ -6,22 +6,27 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Added
-- LGPL 3.0 license
 - time4mind_test.py
 - pkboxsoap.py errorlevel and handler now are in config
 - webserver listen ipaddress now is in config
 ### Changed
 ### Fixed
 - skip certificates with certificateStatus != ATTIVO
-- sign_test.py utility aligned with updated pkboxsoap.py
 - removed customerinfo from signature params to fix errors
 - improved logging 
-- module python-magic was not declared in README.md
 - other minor fixes in README.md and RHEL.md
 - create storage dir if not present
 ### Removed
 ### Security
 ### Deprecated
+
+
+## [0.8.1] - 2017-03-13
+### Added
+- LGPL 3.0 license
+### Fixed
+- sign_test.py utility aligned with updated pkboxsoap.py
+- module python-magic was not declared in README.md
 
 
 ## [0.8.0] - 2017-03-09
