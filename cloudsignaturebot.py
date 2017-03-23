@@ -362,11 +362,18 @@ def sign_single_document(bot, update):
         # save data to yaml
         directory = cfg['storage']
         if not os.path.exists(directory):
-            os.makedirs(directory)
+            try:
+                os.makedirs(directory)
+            except:
+                logging.critical("error makedirs: " + str(directory))
         yml_pathname = directory + '/' + operation_uuid4 + '.yml'
-        with open(yml_pathname, 'w+') as yml_file: yml_file.write(yaml.dump(docs))
-        logging.info("sign_single_document() operation " + operation_uuid4 \
-                    + " saved docs to " + yml_pathname)
+        try: 
+            with open(yml_pathname, 'w+') as yml_file: yml_file.write(yaml.dump(docs))
+        except:
+            logging.critical("error writing yml file: " + str(yml_pathname))
+        else:
+            logging.info("sign_single_document() operation " + operation_uuid4 \
+                        + " saved docs to " + yml_pathname)
         # request to sign
         signMobileRequest(user_info,docs) 
         text="Request to sign sent to your Valid app"

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - improved logging 
 - module python-magic was not declared in README.md
 - other minor fixes in README.md and RHEL.md
+- create storage dir if not present
 ### Removed
 ### Security
 ### Deprecated
