@@ -14,7 +14,6 @@ import urllib.request
 import shutil
 import re
 import magic
-import pprint
 from threading import Thread
 from queue import Queue
 from time4mind import Time4Mind
@@ -352,7 +351,10 @@ def sign_single_document(bot, update):
         docs = { 'operation_uuid4': operation_uuid4,
                  'list': [ doc_info ] }
         # save data to yaml
-        yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
+        directory = cfg['storage']
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        yml_pathname = directory + '/' + operation_uuid4 + '.yml'
         with open(yml_pathname, 'w+') as yml_file: yml_file.write(yaml.dump(docs))
         logging.info("sign_single_document() operation " + operation_uuid4 \
                     + " saved docs to " + yml_pathname)
@@ -404,22 +406,13 @@ def signMobileRequest(user_info,docs):
 def unknown_cmd(bot, update):
     bot.sendMessage(chat_id=update.message.chat_id, text="Sorry, I didn't understand that command.")
 
-def echo(bot, update):
-    bot.sendMessage(chat_id=update.message.chat_id, text='You say: '+update.message.text)
-
 def filter_any(msg):
-    logging.info('Received message_id: '+str(msg['message_id']))
-    if 'text' in msg:
-        logging.info('text: '+msg['text'])
-    if 'document' in msg:
-        d = msg['document']
-        logging.info('document: '+str(d['file_name']))
+    logging.debug('Received message_id: '+str(msg.message_id))
+    if msg.text:
+        logging.debug('text: '+msg.text)
+    elif msg.document:
+        logging.debug('document: '+msg.document.file_name)
     return False
-
-def log_message(bot, update):
-    #if 'text' in update.message:
-    #    logging.info('text: '+update.message.text)
-    logging.info('Logging message: '+repr(update.message.text))
 
 ###############
 # Main section
@@ -441,7 +434,7 @@ dispatcher = updater.dispatcher
 # begin telegram commands
 
 # trace messages
-trace_handler = MessageHandler(filter_any, log_message)
+trace_handler = MessageHandler(filter_any, lambda : True )
 dispatcher.add_handler(trace_handler)
 
 # start command
@@ -459,10 +452,6 @@ dispatcher.add_handler(status_handler)
 # sign document filter 
 sign_handler = MessageHandler(Filters.document, sign_single_document)
 dispatcher.add_handler(sign_handler)
-
-# echo 
-echo_handler = MessageHandler(Filters.text, echo)
-dispatcher.add_handler(echo_handler)
 
 # unknown commands
 unknown_handler = MessageHandler(Filters.command, unknown_cmd)
