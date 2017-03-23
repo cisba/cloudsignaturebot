@@ -15,7 +15,10 @@ class Time4MindRPC:
         conf -- the configuration dictionary
         """
         self.endpoint = conf['endpoint']
-        self.cert = (conf['cert'], conf['key'])
+        if 'cert' in conf and 'key' in conf:
+            self.cert = (conf['cert'], conf['key'])
+        else:
+            self.cert = None
         if 'restHook' in conf:
             self.restHook = conf['restHook']
         else:
