@@ -14,6 +14,7 @@ import urllib.request
 import shutil
 import re
 import magic
+import json
 from threading import Thread
 from queue import Queue
 from time4mind import Time4Mind
@@ -85,24 +86,39 @@ def process_queue(args):
                                 + '\nuser_id: ' + str(q_msg['user_id']) )
             else:
                 logging.info('authorized user: ' + str(q_msg['user_id'])) 
+
         # sign transaction
         elif q_msg['type'] == "signature":
 
             # retrive file info
+            operation_uuid4 = q_msg['operation_uuid4'] 
+            yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
             try:
-                operation_uuid4 = q_msg['operation_uuid4'] 
-                yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
-                logging.info("process_queue() operation " + operation_uuid4 \
-                            + " retriving info from " + yml_pathname)
                 with open(yml_pathname, 'r') as yml_file: 
                     docs = yaml.load(yml_file)
                 #logging.info(repr(docs))
             except: 
                 logging.warning('error retriving saved info for operation: '\
-                                + operation_uuid4)
+                                + operation_uuid4 \
+                                + " from " + yml_pathname)
+            else: 
+                logging.info("process_queue() operation " + operation_uuid4 \
+                            + " retrived info from " + yml_pathname)
 
-            # sign
+            # setup transaction signing otp
             transaction = q_msg['content']
+            #bot.sendMessage(chat_id=q_msg['chat_id'], text=str(transaction))
+            try:
+                received_otp = json.loads(transaction['otp'])
+            except Exception as inst:
+                logging.debug(inst.args)
+            sign_otp = dict()
+            sign_otp['KeyPIN'] = received_otp['KeyPIN']
+            sign_otp['SessionKey'] = received_otp['SessionKey']
+            sign_otp['PIN'] = str(transaction['pin'])
+            logging.debug("process_queue() sign_otp: " + str(json.dumps(sign_otp)) )
+            
+            # sign
             parent_dir = cfg['storage'] + '/' + str(q_msg['chat_id'])
             directory = parent_dir + '/' + operation_uuid4 + '/'
             for file_item in docs['list']:
@@ -119,9 +135,10 @@ def process_queue(args):
                 # call pkbox for signing 
                 logging.info("process_queue() operation " + operation_uuid4 \
                         + " signing file: " + pathname) 
+                #bot.sendMessage(chat_id=q_msg['chat_id'], text=str(json.dumps(sign_otp)))
                 result = sign_service.envelope(pathname, filetype, signer,
                                                     str(transaction['pin']), 
-                                                    str(transaction['otp']))
+                                                    str(json.dumps(sign_otp)))
                 # evaluate result
                 index = docs['list'].index(file_item)
                 if result == 'ok':

@@ -203,6 +203,6 @@ class Time4Mind():
         restHook = self.cfg['webserver']['endpoint'] + route 
         return self.time4id.authorizeMobile(otpId,otpProvider,
                                             title,sender,message,restHook,
-                                            opType=2,authType=3,wizard=wizard)
+                                            opType=2,authType=0,wizard=wizard)
 
 
