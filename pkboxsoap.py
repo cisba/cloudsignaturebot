@@ -4,7 +4,7 @@ It allow to sign documents using a pkbox server via SOAP interface
 """
 
 import datetime
-import logging
+import logging.config
 import urllib3
 import requests
 from zeep import Client
@@ -24,7 +24,32 @@ class PkBoxSOAP:
             self.hostname = conf['hostname']
         else:
             self.hostname = 'localhost:8443'
-   
+        if 'environment' in conf:
+            self.environment = conf['environment']
+        else:
+            self.environment = 'default'
+        if 'loglevel' in conf:
+            self.loglevel = conf['loglevel']
+        else:
+            self.loglevel = 'WARNING'
+        logging.config.dictConfig({
+            'version': 1,
+            'loggers': {
+                'zeep.transports': {
+                    'level': self.loglevel,
+                    'propagate': True,
+                },
+                'zeep.xsd': {
+                    'level': 'WARNING',
+                    'propagate': True,
+                },
+                'zeep.wsdl': {
+                    'level': 'ERROR',
+                    'propagate': True,
+                },
+            }
+        })
+
 
     def envelope(self, pathname, filetype, signer, pin, otp):
         """signature method
@@ -55,34 +80,30 @@ class PkBoxSOAP:
         try:
             with open(pathname, 'rb') as f: document = f.read()
         except:
-            ret_val = 'read_error'
-            logging.warning("failed pkbox fileread: " + pathname)
+            return 'read_error'
         # detect file format
-        ret_val = 'ok'
         if filetype == 'pdf':
             try:
-                result = service.pdfsign(environment="default", signer=signer, pin=pin, signerPin=otp, 
-                                         date=datetime.date.today(), customerinfo=None,
+                result = service.pdfsign(environment=self.environment, signer=signer, pin=pin, signerPin=otp, 
+                                         date=datetime.date.today(),
                                          document=document, 
                                          fieldName=None, image=None, page=-1, position=0, x=0, y=0)
-            except:
-                ret_val = 'pdfsign_error'
-                logging.warning("failed pkbox pdfsign: " + pathname)
+            except Exception as inst:
+                logging.debug(inst.args) 
+                return inst.args
         else:
             try:
-                result = service.sign(environment="default", signer=signer, pin=pin, signerPin=otp, 
-                                      date=datetime.date.today(), customerinfo=None,
+                result = service.sign(environment=self.environment, signer=signer, pin=pin, signerPin=otp, 
+                                      date=datetime.date.today(),
                                       data=document, mode=1, encoding=1 )
-            except:
-                ret_val = 'sign_error'
-                logging.warning("failed pkbox sign: " + pathname)
+            except Exception as inst:
+                logging.debug(inst.args) 
+                return inst.args
         # file overwrite with signed one
-        if ret_val == 'ok': 
-            try:
-                with open(pathname,'wb+') as f: f.write(result)
-            except:
-                ret_val = 'overwrite_error'
-                logging.warning("failed pkbox filewrite: " + pathname)
-        # return filetype to manage new filename
-        return ret_val
+        try:
+            with open(pathname,'wb+') as f: f.write(result)
+        except:
+            return 'pkboxsoap overwrite error'
+        else:
+            return 'ok'
 

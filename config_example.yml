@@ -7,7 +7,7 @@ bot:
     token: secret
 
 webserver:
-    endpoint: https://example.com
+    endpoint: https://example.com/csb
 
 acl: sec/acl.yml
 logfile: sec/cloudsignaturebot.log

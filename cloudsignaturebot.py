@@ -14,6 +14,7 @@ import urllib.request
 import shutil
 import re
 import magic
+import json
 from threading import Thread
 from queue import Queue
 from time4mind import Time4Mind
@@ -73,36 +74,51 @@ def process_queue(args):
         # auth transaction
         if q_msg['type'] == "authorization":
             transaction = q_msg['content']
+            acl_set_status(q_msg['chat_id'],"authorized")
+            message = 'You have been authorized. Now send me a file to sign!'
             try:
-                acl_set_status(q_msg['chat_id'],"authorized")
-                message = 'You have been authorized'
                 bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
-                logging.info('authorized user: ' + str(q_msg['user_id'])) 
             except:
                 logging.warning('error sending auth confirmation for transaction '\
                                 + '\ncontent: ' + str(transaction) \
                                 + '\nbot: ' + str(bot) \
                                 + '\nchat_id: ' + str(q_msg['chat_id']) \
                                 + '\nuser_id: ' + str(q_msg['user_id']) )
+            else:
+                logging.info('authorized user: ' + str(q_msg['user_id'])) 
 
         # sign transaction
         elif q_msg['type'] == "signature":
 
             # retrive file info
+            operation_uuid4 = q_msg['operation_uuid4'] 
+            yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
             try:
-                operation_uuid4 = q_msg['operation_uuid4'] 
-                yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
-                logging.info("operation " + operation_uuid4 \
-                            + " retriving info from " + yml_pathname)
                 with open(yml_pathname, 'r') as yml_file: 
                     docs = yaml.load(yml_file)
-                logging.info(repr(docs))
+                #logging.info(repr(docs))
             except: 
                 logging.warning('error retriving saved info for operation: '\
-                                + operation_uuid4)
+                                + operation_uuid4 \
+                                + " from " + yml_pathname)
+            else: 
+                logging.info("process_queue() operation " + operation_uuid4 \
+                            + " retrived info from " + yml_pathname)
 
-            # sign
+            # setup transaction signing otp
             transaction = q_msg['content']
+            #bot.sendMessage(chat_id=q_msg['chat_id'], text=str(transaction))
+            try:
+                received_otp = json.loads(transaction['otp'])
+            except Exception as inst:
+                logging.debug(inst.args)
+            sign_otp = dict()
+            sign_otp['KeyPIN'] = received_otp['KeyPIN']
+            sign_otp['SessionKey'] = received_otp['SessionKey']
+            sign_otp['PIN'] = str(transaction['pin'])
+            logging.debug("process_queue() sign_otp: " + str(json.dumps(sign_otp)) )
+            
+            # sign
             parent_dir = cfg['storage'] + '/' + str(q_msg['chat_id'])
             directory = parent_dir + '/' + operation_uuid4 + '/'
             for file_item in docs['list']:
@@ -117,13 +133,15 @@ def process_queue(args):
                 if re.match(r'PDF document.*', magic.from_file(pathname)):
                     filetype = 'pdf'
                 # call pkbox for signing 
-                logging.info("signing file: " + pathname)
+                logging.info("process_queue() operation " + operation_uuid4 \
+                        + " signing file: " + pathname) 
+                #bot.sendMessage(chat_id=q_msg['chat_id'], text=str(json.dumps(sign_otp)))
                 result = sign_service.envelope(pathname, filetype, signer,
-                                                    transaction['pin'], 
-                                                    transaction['otp'])
+                                                    str(transaction['pin']), 
+                                                    str(json.dumps(sign_otp)))
                 # evaluate result
+                index = docs['list'].index(file_item)
                 if result == 'ok':
-                    index = docs['list'].index(file_item)
                     if filetype == "pdf":
                         docs['list'][index]['new_name'] = \
                             'SIGNED_' + docs['list'][index]['file_name']
@@ -134,20 +152,21 @@ def process_queue(args):
                                       + ' signed documents in operation: ' \
                                       + operation_uuid4 ) 
                 else:
-                    logging.warning(result + ' signing document for operation:'\
+                    docs['list'][index]['result'] = str(result)
+                    logging.warning("envelope() returned " + str(result) 
+                            + ' signing document for operation:'\
                             + operation_uuid4) 
+
                     # TODO:
-                    # if pdfsign fail it is possible that pdf is invalid
-                    # (i.e.: corrupted or protected with a password)
-                    # so should return a msg to request sign it as p7m
+                    # if pdfsign fail because protected with a password)
+                    # it should return a msg to request sign it as p7m
 
             # send message and signed files
-            message = 'File signing result:'
-            bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
             for file_item in docs['list']:
                 pathname = directory + file_item['file_id']
                 if not 'new_name' in file_item:
-                    message = 'Error signing file: ' + file_item['file_name']
+                    message = 'Error signing file: ' + file_item['file_name'] \
+                            + " with result " + file_item['result']
                     bot.sendMessage(chat_id=q_msg['chat_id'], text=message)
                 elif not os.path.exists(pathname):
                     logging.warning("not found " + pathname)
@@ -176,7 +195,11 @@ def process_queue(args):
 app = Flask(__name__)
 # function to start webserver as a thread
 def flask_thread():
-    app.run(debug=True, use_reloader=False)
+    if 'listenaddr' in cfg['webserver']:
+        listenaddr = cfg['webserver']['listenaddr']
+    else:
+        listenaddr = '127.0.0.1'
+    app.run(host=listenaddr,debug=True, use_reloader=False)
 
 @app.errorhandler(404)
 def not_found(error):
@@ -251,6 +274,7 @@ Example of a sign transaction APPROVED:
             }', 
     'applicationId': None, 
     'approved': 1, 
+    'docSignatureResult': '[]', 
     'transactionId': 'd6d76bdc-23ab-473d-b9c8-a9632c147656', 
     'antiFraud': '[]'
     }
@@ -307,33 +331,42 @@ def link(bot, update, args):
         user_info['display_name'] = user_info['first_name'] + ' ' + user_info['last_name']
     else:
         user_info['display_name'] = user_info['first_name'] 
+    logging.info("/link command received from user: " + user_info['time4mind_account'])
     # look for credentials
     cred = time4mind.getMobileActiveCredentials(user_info['time4mind_account'])
-    if len(cred) > 0:
-        user_info['cred'] = cred[0] 
-    # send request
-    route = '/api/v1.0/authorize/' + str(user_info['chat_id']) \
-            + '/' + str(user_info['id'])
-    try:
-        user_info['last_transaction'] = time4mind.authorize(user_info,route)
-        # save user data
-        acl_update(user_info)
-        # message user
-        message = 'I sent an authorization request to your Valid app'
-        #message += '\n\n'+str(user_info)
-        #message += '\n\n'+str(bot)
+    if len(cred) < 1:
+        logging.warning("/link command did not found valid credentials for user: " + user_info['time4mind_account'])
+        message = 'Error sending an authorization request to this account'
         bot.sendMessage(chat_id=update.message.chat_id, text=message)
-    except:
-         logging.warning("failed to request account usage authorization")
+    else:
+        # TODO: choice if credentials > 1
+        user_info['cred'] = cred[0] 
+        # send request
+        route = '/api/v1.0/authorize/' + str(user_info['chat_id']) \
+                + '/' + str(user_info['id'])
+        try:
+            user_info['last_transaction'] = time4mind.authorize(user_info,route)
+            # save user data
+            acl_update(user_info)
+            # message user
+            message = 'I sent an authorization request to your Valid app'
+            bot.sendMessage(chat_id=update.message.chat_id, text=message)
+        except:
+            logging.warning("failed to request account usage authorization")
 
 
 def sign_single_document(bot, update):
     user_info = acl_get_user_info(update.message.from_user.id)
     chat_id = update.message.chat_id
     operation_uuid4 = str(uuid.uuid4())
-    if not user_info:
+    logging.info("sign_single_document() operation " + operation_uuid4 \
+                + " for user " + str(user_info))
+    if not user_info or 'status' not in user_info:
         text="You are not yet authorized"
-    if user_info['status'] == "authorized":
+    elif user_info['status'] == "waiting authorization":
+        text="Sorry but I'm still waiting your authorization from Valid app\n" \
+             + str(user_info) 
+    elif user_info['status'] == "authorized":
         doc_info = update.message.document.__dict__
         # {'mime_type': 'application/pdf', 'file_id': 'BQADBAADbwADNnbhUZSE6H4S95PIAg', 'file_name': '2017_ci_01_28.pdf', 'file_size': 71689}
         file_id = doc_info['file_id']
@@ -345,10 +378,20 @@ def sign_single_document(bot, update):
         docs = { 'operation_uuid4': operation_uuid4,
                  'list': [ doc_info ] }
         # save data to yaml
-        yml_pathname = cfg['storage'] + '/' + operation_uuid4 + '.yml'
-        with open(yml_pathname, 'w+') as yml_file: yml_file.write(yaml.dump(docs))
-        logging.info("operation " + operation_uuid4 \
-                    + " saved docs to " + yml_pathname)
+        directory = cfg['storage']
+        if not os.path.exists(directory):
+            try:
+                os.makedirs(directory)
+            except:
+                logging.critical("error makedirs: " + str(directory))
+        yml_pathname = directory + '/' + operation_uuid4 + '.yml'
+        try: 
+            with open(yml_pathname, 'w+') as yml_file: yml_file.write(yaml.dump(docs))
+        except:
+            logging.critical("error writing yml file: " + str(yml_pathname))
+        else:
+            logging.info("sign_single_document() operation " + operation_uuid4 \
+                        + " saved docs to " + yml_pathname)
         # request to sign
         signMobileRequest(user_info,docs) 
         text="Request to sign sent to your Valid app"
@@ -360,11 +403,6 @@ def sign_single_document(bot, update):
                 open(directory + doc_info['file_id'], 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
 
-    elif user_info['status'] == "waiting authorization":
-        text="Sorry but I'm still waiting your authorization from Valid app\n" \
-             + str(user_info) 
-    else:
-        text="You are not yet authorized"
     bot.sendMessage(chat_id=update.message.chat_id, text=text, parse_mode="Markdown") 
 
 def signMobileRequest(user_info,docs):
@@ -384,16 +422,27 @@ def signMobileRequest(user_info,docs):
                                             user_info['cred']['otpProvider'],
                                             title,sender,message,
                                             user_info['cred']['label'],route)
-            logging.info("request signature sent for user: " + str(user_info['id']) \
-                         + "\ntransaction: " + str(user_info['last_transaction']) \
-                         + "\noperation: " + str(docs['operation_uuid4']))
         except:
             logging.warning("failed to request signature authorization")
+        else:
+            logging.info("signMobileRequest() sent to user: " + str(user_info['id']) \
+                         + " - operation: " + str(docs['operation_uuid4']) \
+                         + " - transaction: " + str(user_info['last_transaction']) )
         try:
             acl_update(user_info)
         except:
             logging.warning("failed to save transaction data")
 
+def unknown_cmd(bot, update):
+    bot.sendMessage(chat_id=update.message.chat_id, text="Sorry, I didn't understand that command.")
+
+def filter_any(msg):
+    logging.debug('Received message_id: '+str(msg.message_id))
+    if msg.text:
+        logging.debug('text: '+msg.text)
+    elif msg.document:
+        logging.debug('document: '+msg.document.file_name)
+    return False
 
 ###############
 # Main section
@@ -403,14 +452,20 @@ with open(sys.argv[1], 'r') as yml_file: cfg = yaml.load(yml_file)
 time4mind = Time4Mind(cfg)
 
 # setup logger
-logging.basicConfig(level=logging.INFO,
-                    filename=cfg['logfile'], filemode='w',
+logging.basicConfig(level=logging.DEBUG,
+                    filename=cfg['logfile'], 
                     format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                     datefmt='%Y-%m-%d %H:%M')
 
 # setup telegram updater and  dispatchers
 updater = Updater(token=cfg['bot']['token'])
 dispatcher = updater.dispatcher
+
+# begin telegram commands
+
+# trace messages
+trace_handler = MessageHandler(filter_any, lambda : True )
+dispatcher.add_handler(trace_handler)
 
 # start command
 start_handler = CommandHandler('start', start)
@@ -428,13 +483,19 @@ dispatcher.add_handler(status_handler)
 sign_handler = MessageHandler(Filters.document, sign_single_document)
 dispatcher.add_handler(sign_handler)
 
+# unknown commands
+unknown_handler = MessageHandler(Filters.command, unknown_cmd)
+dispatcher.add_handler(unknown_handler)
+
+# end telegram commands
+
 # setup queue
 q = Queue(maxsize=100)
 bot = Bot(cfg['bot']['token'])
 dispatcher.run_async(process_queue,(q,bot,acl_set_status))
 
 # setup pkbox handler to sign
-sign_service = PkBoxSOAP()
+sign_service = PkBoxSOAP(cfg['pkbox'])
 
 # run updater and webserver as a threads
 webserver_thread = Thread(target=flask_thread, name='webserver')

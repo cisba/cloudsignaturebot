@@ -3,7 +3,7 @@
 It allow to manage users' electronic identities on the Time4Mind cloud PaaS
 """
 
-import requests,json
+import requests,json, logging
 
 class Time4MindRPC:
     """Common base class for all Time4Mind RPC call"""
@@ -15,7 +15,10 @@ class Time4MindRPC:
         conf -- the configuration dictionary
         """
         self.endpoint = conf['endpoint']
-        self.cert = (conf['cert'], conf['key'])
+        if 'cert' in conf and 'key' in conf:
+            self.cert = (conf['cert'], conf['key'])
+        else:
+            self.cert = None
         if 'restHook' in conf:
             self.restHook = conf['restHook']
         else:
@@ -41,13 +44,16 @@ class Time4MindRPC:
         self.payload['method'] = method
         if params: self.payload['params'] = params
         j_payload = self.payload
-        #logging.debug(json.dumps(self.payload))
-        resp = requests.post(self.endpoint, cert=self.cert, json=j_payload, headers=self.headers)
+        logging.debug('postRPC call payload: ' + json.dumps(self.payload))
+        resp = requests.post(self.endpoint, cert=self.cert, 
+                             json=j_payload, headers=self.headers)
         if resp.status_code != 200: resp.raise_for_status()
         try:    
+            logging.debug('postRPC response: ' + repr(resp.json()['result']))
             return resp.json()['result']
         except:
-            logging.warning('Got 200.. but not result! resp.content is: '+str(resp.content))
+            logging.warning('Got 200.. but not result! resp.content is: ' \
+                            +str(resp.content))
             return None
 
 
@@ -55,7 +61,8 @@ class Time4UserRPC(Time4MindRPC):
     """class for Time4User RPC call derived from Time4MindRPC"""
         
     def listSignCredentials(self,user):
-        """map to Time4User listCredentials method, requiring only signature flavour
+        """map to Time4User listCredentials method, 
+           requiring only signature flavour
         
         Keyword arguments:
         user -- a dictionary with user attributes
@@ -103,6 +110,10 @@ class Time4IdRPC(Time4MindRPC):
         if wizard: params['param'] = wizard
         return self.postRPC('submitOOB', params)
 
+    def getTokenInfo(self,otpId,otpProvider):
+        params = {'otpId': otpId, 'otpProvider': otpProvider }
+        return self.postRPC('getTokenInfo', params)
+
 
 class Time4Mind():
     """the high level class used from others applications
@@ -148,11 +159,13 @@ class Time4Mind():
         """
         credentials = self.time4user.listSignCredentials(user)
         result = []
-        if credentials:
+        if 'credentialsData' in credentials and credentials['credentialsData']:
             # Now clean the list
             for todo_item in credentials['credentialsData']:
+                logging.debug('found credential: ' + repr(todo_item))
                 # remove status not ACTIVE
                 if todo_item['status'] != 'ACTIVE' : continue
+                if todo_item['certificateStatus'] != 'ATTIVO' : continue
                 # remove not having any OTP
                 if todo_item['otpDetails'] == None : continue
                 # remove OTP not on app Time4ID 
@@ -161,8 +174,11 @@ class Time4Mind():
                 c = dict((k, todo_item[k]) for k in ('alias','domain','label'))
                 c['otpId'] = todo_item['otpDetails']['otpId'] 
                 c['otpProvider'] = todo_item['otpDetails']['otpProvider'] 
+                # remove OTP not responding to Time4Id backend 
+                if not self.time4id.getTokenInfo(c['otpId'],c['otpProvider']) : continue
                 # 0=sms, 1=app, 2=email
                 c['otpMode'] = todo_item['otpDetails']['otpMode'] 
+                c['dump'] = todo_item 
                 result += [c]
         return result
 
@@ -187,6 +203,6 @@ class Time4Mind():
         restHook = self.cfg['webserver']['endpoint'] + route 
         return self.time4id.authorizeMobile(otpId,otpProvider,
                                             title,sender,message,restHook,
-                                            opType=2,authType=3,wizard=wizard)
+                                            opType=2,authType=0,wizard=wizard)
 
 
