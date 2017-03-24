@@ -4,12 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## [Unreleased]
+## [0.8.2]
 ### Added
 - time4mind_test.py
 - pkboxsoap.py errorlevel and handler now are in config
 - webserver listen ipaddress now is in config
-### Changed
 ### Fixed
 - skip certificates with certificateStatus != ATTIVO
 - removed customerinfo from signature params to fix errors
@@ -17,9 +16,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - other minor fixes in README.md and RHEL.md
 - create storage dir if not present
 - sign: fixed authType=0 and otp json structure
-### Removed
-### Security
-### Deprecated
 
 
 ## [0.8.1] - 2017-03-13
