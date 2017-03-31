@@ -18,7 +18,9 @@ logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                     datefmt='%Y-%m-%d %H:%M')
 
-if re.match(r'PDF document.*', magic.from_file(pathname)):
+fileformat = magic.from_file(pathname)
+print("fileformat is: "+fileformat)
+if re.match(r'PDF document.*', fileformat):
     filetype = 'pdf'
 else:
     filetype = 'p7m'
