@@ -10,7 +10,7 @@ The project rely on:
 ## Requirements and Installation
 
 * Python3 >= 3.4.2
-* $pip install PyYaml requests flask python-telegram-bot Zeep python-magic
+* $pip3 install PyYaml requests flask python-telegram-bot Zeep python-magic
 * a PkBox server to process document signatures locally
 * Time4Mind ssl-client certificates to use webapi for strong authentication
 * signature certificates issued for your users on the Time4Mind platform
@@ -34,7 +34,7 @@ End user signature certificates will be soon available at the [Intesi Group Stor
 
 Edit config.yml to configure your bot.
 
-Run the command `python3 cloudsignaturebot.py time4mind.yml`
+Run the command `python3 cloudsignaturebot.py config.yml`
 
 ## Known Issues
 
